@@ -16,6 +16,7 @@ from starlette.routing import Route
 import uvicorn
 
 from pymongo import MongoClient
+import certifi
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,7 +27,7 @@ DB_FILE = "data.json"
 LANG_FILE = "lang.json"
 
 # ---------- ডাটা লোড/সেভ (MongoDB থাকলে সেটা ব্যবহার হবে, নাহলে লোকাল ফাইল — যেটা Render রিস্টার্টে মুছে যায়) ----------
-mongo_client = MongoClient(MONGO_URI) if MONGO_URI else None
+mongo_client = MongoClient(MONGO_URI, tlsCAFile=certifi.where()) if MONGO_URI else None
 mongo_state = mongo_client["telegram_bot"]["state"] if mongo_client else None
 
 def load_json(path):
