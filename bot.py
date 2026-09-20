@@ -33,43 +33,70 @@ def save_db(db):
         json.dump(db, f, ensure_ascii=False, indent=2)
 
 db = load_db()
-# গঠন: { "movie/song নাম": { "quality": file_id, ... } }
+# গঠন: { "movie/song নাম": { "quality": "google drive link" } }
 
 # ---------- /start ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "স্বাগতম!\nমুভি বা গানের নাম লিখে সার্চ করো।"
+        "Welcome! Type a movie or song name to search.\n"
+        "स्वागत है! मूवी या गाने का नाम लिखकर खोजें।\n"
+        "স্বাগতম! মুভি বা গানের নাম লিখে সার্চ করো।"
     )
 
-# ---------- অ্যাডমিন: কনটেন্ট যোগ করা ----------
-# ভিডিও/অডিও পাঠানোর সময় ক্যাপশনে লিখতে হবে: টাইটেল | কোয়ালিটি
-# উদাহরণ ক্যাপশন: Amar Video | 720
+# ---------- অ্যাডমিন: লিংক যোগ করা ----------
+# ব্যবহার: /add টাইটেল | কোয়ালিটি | লিংক
+# উদাহরণ: /add Amar Movie | 720 | https://drive.google.com/xyz
 async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return  # অ্যাডমিন ছাড়া কেউ যোগ করতে পারবে না
 
-    caption = update.message.caption
-    if not caption or "|" not in caption:
+    text = update.message.text or ""
+    parts = text.split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
         await update.message.reply_text(
-            "ক্যাপশন ফরম্যাট ভুল। এভাবে লিখো: টাইটেল | কোয়ালিটি\nউদাহরণ: Amar Video | 720"
+            "ফরম্যাট ভুল। এভাবে লিখো:\n"
+            "/add টাইটেল | কোয়ালিটি | লিংক\n"
+            "উদাহরণ: /add Amar Movie | 720 | https://drive.google.com/xyz"
         )
         return
 
-    title, quality = [x.strip() for x in caption.split("|", 1)]
-
-    if update.message.video:
-        file_id = update.message.video.file_id
-    elif update.message.audio:
-        file_id = update.message.audio.file_id
-    elif update.message.document:
-        file_id = update.message.document.file_id
-    else:
-        await update.message.reply_text("ভিডিও/অডিও/ফাইল পাঠাও।")
+    payload = parts[1]
+    segments = [s.strip() for s in payload.split("|")]
+    if len(segments) != 3:
+        await update.message.reply_text(
+            "ফরম্যাট ভুল। এভাবে লিখো:\n"
+            "/add টাইটেল | কোয়ালিটি | লিংক\n"
+            "উদাহরণ: /add Amar Movie | 720 | https://drive.google.com/xyz"
+        )
         return
 
-    db.setdefault(title, {})[quality] = file_id
+    title, quality, link = segments
+    if not title or not quality or not link:
+        await update.message.reply_text("টাইটেল, কোয়ালিটি ও লিংক তিনটেই দিতে হবে।")
+        return
+
+    db.setdefault(title, {})[quality] = link
     save_db(db)
     await update.message.reply_text(f"যোগ হয়েছে ✅\nটাইটেল: {title}\nকোয়ালিটি: {quality}")
+
+# ---------- অ্যাডমিন: কনটেন্ট ডিলিট করা ----------
+# ব্যবহার: /remove টাইটেল
+async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text("এভাবে লিখো:\n/remove টাইটেল")
+        return
+
+    title = parts[1].strip()
+    if title in db:
+        del db[title]
+        save_db(db)
+        await update.message.reply_text(f"ডিলিট হয়েছে ✅: {title}")
+    else:
+        await update.message.reply_text("এই টাইটেল পাওয়া যায়নি।")
 
 # ---------- সার্চ (ইউজার টেক্সট পাঠালে) ----------
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -80,7 +107,9 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     matches = [title for title in db.keys() if query in title.lower()]
 
     if not matches:
-        await update.message.reply_text("কিছু পাওয়া যায়নি।")
+        await update.message.reply_text(
+            "Not found.\nकुछ नहीं मिला।\nকিছু পাওয়া যায়নি।"
+        )
         return
 
     buttons = [
@@ -88,7 +117,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for title in matches[:15]
     ]
     await update.message.reply_text(
-        "রেজাল্ট:", reply_markup=InlineKeyboardMarkup(buttons)
+        "Results / परिणाम / রেজাল্ট:", reply_markup=InlineKeyboardMarkup(buttons)
     )
 
 # ---------- টাইটেল সিলেক্ট করলে কোয়ালিটি দেখানো ----------
@@ -99,7 +128,11 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     qualities = db.get(title, {})
     if not qualities:
-        await query.edit_message_text("এই কনটেন্ট আর পাওয়া যাচ্ছে না।")
+        await query.edit_message_text(
+            "This content is no longer available.\n"
+            "यह सामग्री अब उपलब्ध नहीं है।\n"
+            "এই কনটেন্ট আর পাওয়া যাচ্ছে না।"
+        )
         return
 
     buttons = [
@@ -107,22 +140,27 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for q in qualities.keys()
     ]
     await query.edit_message_text(
-        f"{title}\nকোয়ালিটি সিলেক্ট করো:",
+        f"{title}\nSelect quality / क्वालिटी चुनें / কোয়ালিটি সিলেক্ট করো:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# ---------- কোয়ালিটি সিলেক্ট করলে ফাইল পাঠানো ----------
+# ---------- কোয়ালিটি সিলেক্ট করলে ডাউনলোড লিংক পাঠানো ----------
 async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     _, title, quality = query.data.split("::", 2)
 
-    file_id = db.get(title, {}).get(quality)
-    if not file_id:
-        await query.message.reply_text("ফাইল পাওয়া যায়নি।")
+    link = db.get(title, {}).get(quality)
+    if not link:
+        await query.message.reply_text(
+            "Link not found.\nलिंक नहीं मिला।\nলিংক পাওয়া যায়নি।"
+        )
         return
 
-    await context.bot.send_document(chat_id=query.message.chat_id, document=file_id)
+    await query.message.reply_text(
+        f"{title} ({quality})\n"
+        f"Download link / डाउनलोड लिंक / ডাউনলোড লিংক:\n{link}"
+    )
 
 # ---------- webhook মোড (Render-এর জন্য, starlette+uvicorn দিয়ে) ----------
 async def run_webhook_server(application: Application, base_url: str, port: int):
@@ -155,10 +193,8 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
 def build_application() -> Application:
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.AUDIO | filters.Document.ALL) & filters.CAPTION,
-        add_content
-    ))
+    application.add_handler(CommandHandler("add", add_content))
+    application.add_handler(CommandHandler("remove", remove_content))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
