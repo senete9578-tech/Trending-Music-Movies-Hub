@@ -1,11 +1,19 @@
 import os
 import json
 import logging
+import asyncio
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
+
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import Response, PlainTextResponse
+from starlette.routing import Route
+import uvicorn
 
 logging.basicConfig(level=logging.INFO)
 
@@ -116,33 +124,58 @@ async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_document(chat_id=query.message.chat_id, document=file_id)
 
-# ---------- মেইন ----------
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+# ---------- webhook মোড (Render-এর জন্য, starlette+uvicorn দিয়ে) ----------
+async def run_webhook_server(application: Application, base_url: str, port: int):
+    await application.bot.set_webhook(url=f"{base_url}/{BOT_TOKEN}")
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(
+    async def telegram_webhook(request: Request) -> Response:
+        data = await request.json()
+        update = Update.de_json(data=data, bot=application.bot)
+        await application.update_queue.put(update)
+        return Response()
+
+    async def health(request: Request) -> PlainTextResponse:
+        return PlainTextResponse("OK")
+
+    starlette_app = Starlette(routes=[
+        Route("/", health, methods=["GET"]),
+        Route(f"/{BOT_TOKEN}", telegram_webhook, methods=["POST"]),
+    ])
+
+    server = uvicorn.Server(
+        config=uvicorn.Config(app=starlette_app, host="0.0.0.0", port=port, log_level="info")
+    )
+
+    async with application:
+        await application.start()
+        await server.serve()
+        await application.stop()
+
+# ---------- মেইন ----------
+def build_application() -> Application:
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(
         (filters.VIDEO | filters.AUDIO | filters.Document.ALL) & filters.CAPTION,
         add_content
     ))
-    app.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
-    app.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
+    application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
+    application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
+    return application
+
+def main():
+    application = build_application()
 
     render_url = os.environ.get("RENDER_EXTERNAL_URL")
     port = os.environ.get("PORT")
 
     if render_url and port:
-        # Render (ও অন্য যেকোনো ওয়েব-সার্ভিস হোস্টিং)-এর জন্য webhook মোড
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=int(port),
-            url_path=BOT_TOKEN,
-            webhook_url=f"{render_url}/{BOT_TOKEN}",
-        )
+        # Render (বা অন্য যেকোনো ওয়েব-সার্ভিস হোস্টিং)-এর জন্য webhook মোড
+        asyncio.run(run_webhook_server(application, render_url, int(port)))
     else:
         # সাধারণ polling মোড (VPS/লোকাল রানের জন্য)
-        app.run_polling()
+        application.run_polling()
 
 if __name__ == "__main__":
     main()
