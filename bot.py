@@ -15,14 +15,20 @@ from starlette.responses import Response, PlainTextResponse
 from starlette.routing import Route
 import uvicorn
 
+from pymongo import MongoClient
+
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
+MONGO_URI = os.environ.get("MONGO_URI")
 DB_FILE = "data.json"
 LANG_FILE = "lang.json"
 
-# ---------- ডাটা লোড/সেভ ----------
+# ---------- ডাটা লোড/সেভ (MongoDB থাকলে সেটা ব্যবহার হবে, নাহলে লোকাল ফাইল — যেটা Render রিস্টার্টে মুছে যায়) ----------
+mongo_client = MongoClient(MONGO_URI) if MONGO_URI else None
+mongo_state = mongo_client["telegram_bot"]["state"] if mongo_client else None
+
 def load_json(path):
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -33,8 +39,20 @@ def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-db = load_json(DB_FILE)          # { "title": { "quality": "link" } }
-user_lang = load_json(LANG_FILE)  # { "user_id": "lang_code" }
+def load_state(key, path, default):
+    if mongo_state is not None:
+        doc = mongo_state.find_one({"_id": key})
+        return doc["data"] if doc else default
+    return load_json(path)
+
+def save_state(key, path, data):
+    if mongo_state is not None:
+        mongo_state.update_one({"_id": key}, {"$set": {"data": data}}, upsert=True)
+    else:
+        save_json(path, data)
+
+db = load_state("content", DB_FILE, {})          # { "title": { "quality": "link" } }
+user_lang = load_state("languages", LANG_FILE, {})  # { "user_id": "lang_code" }
 
 # ---------- ভাষা ----------
 LANGUAGES = {
@@ -152,7 +170,7 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     lang_code = query.data.split("::", 1)[1]
     user_lang[str(query.from_user.id)] = lang_code
-    save_json(LANG_FILE, user_lang)
+    save_state("languages", LANG_FILE, user_lang)
 
     texts = TEXTS[lang_code]
     await query.edit_message_text(
@@ -185,7 +203,7 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     title, quality, link = segments
     db.setdefault(title, {})[quality] = link
-    save_json(DB_FILE, db)
+    save_state("content", DB_FILE, db)
     await update.message.reply_text(f"যোগ হয়েছে ✅\nটাইটেল: {title}\nকোয়ালিটি: {quality}")
 
 # ---------- অ্যাডমিন: কনটেন্ট ডিলিট করা ----------
@@ -201,7 +219,7 @@ async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = parts[1].strip()
     if title in db:
         del db[title]
-        save_json(DB_FILE, db)
+        save_state("content", DB_FILE, db)
         await update.message.reply_text(f"ডিলিট হয়েছে ✅: {title}")
     else:
         await update.message.reply_text("এই টাইটেল পাওয়া যায়নি।")
