@@ -3,6 +3,7 @@ import json
 import logging
 import asyncio
 import difflib
+from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -26,6 +27,8 @@ ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 MONGO_URI = os.environ.get("MONGO_URI")
 DB_FILE = "data.json"
 LANG_FILE = "lang.json"
+META_FILE = "meta.json"
+USERS_FILE = "users.json"
 
 PAGE_SIZE = 10
 
@@ -57,10 +60,17 @@ def save_state(key, path, data):
 
 db = load_state("content", DB_FILE, {})            # { "title": { "quality": "link" } }
 user_lang = load_state("languages", LANG_FILE, {})  # { "user_id": "lang_code" }
+title_meta = load_state("meta", META_FILE, {})      # { "title": {"added_at": iso_string} }
+known_users = set(load_state("users", USERS_FILE, []))
 
 # শুধু এই সেশনে চালু থাকা, রিস্টার্টে মুছে যাওয়া অস্থায়ী ডাটা
 last_search_results = {}   # user_id -> [title, ...]  (পেজিনেশনের জন্য)
 pending_request = {}       # user_id -> query text     (রিকোয়েস্ট বাটনের জন্য)
+
+def register_user(user_id: int):
+    if user_id not in known_users:
+        known_users.add(user_id)
+        save_state("users", USERS_FILE, list(known_users))
 
 # ---------- ভাষা ----------
 LANGUAGES = {
@@ -86,6 +96,7 @@ TEXTS = {
         "download_link": "Download link:",
         "request_button": "Request this title",
         "request_sent": "Your request has been sent to the admin.",
+        "thank_you": "Thank you for using the bot! Enjoy watching.",
     },
     "hi": {
         "choose_language": "अपनी भाषा चुनें:",
@@ -99,6 +110,7 @@ TEXTS = {
         "download_link": "डाउनलोड लिंक:",
         "request_button": "यह टाइटल रिक्वेस्ट करें",
         "request_sent": "आपका अनुरोध एडमिन को भेज दिया गया है।",
+        "thank_you": "बॉट इस्तेमाल करने के लिए धन्यवाद! देखने का आनंद लें।",
     },
     "bn": {
         "choose_language": "আপনার ভাষা নির্বাচন করুন:",
@@ -112,6 +124,7 @@ TEXTS = {
         "download_link": "ডাউনলোড লিংক:",
         "request_button": "এই টাইটেল রিকোয়েস্ট করো",
         "request_sent": "তোমার রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে।",
+        "thank_you": "বট ব্যবহার করার জন্য ধন্যবাদ! উপভোগ করো।",
     },
     "ta": {
         "choose_language": "உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
@@ -125,6 +138,7 @@ TEXTS = {
         "download_link": "பதிவிறக்க இணைப்பு:",
         "request_button": "இந்த தலைப்பை கோரவும்",
         "request_sent": "உங்கள் கோரிக்கை நிர்வாகிக்கு அனுப்பப்பட்டது.",
+        "thank_you": "பாட்டைப் பயன்படுத்தியதற்கு நன்றி! பார்த்து மகிழுங்கள்.",
     },
     "te": {
         "choose_language": "మీ భాషను ఎంచుకోండి:",
@@ -138,6 +152,7 @@ TEXTS = {
         "download_link": "డౌన్‌లోడ్ లింక్:",
         "request_button": "ఈ టైటిల్ అభ్యర్థించండి",
         "request_sent": "మీ అభ్యర్థన అడ్మిన్‌కు పంపబడింది.",
+        "thank_you": "బాట్ ఉపయోగించినందుకు ధన్యవాదాలు! ఆనందించండి.",
     },
     "mr": {
         "choose_language": "तुमची भाषा निवडा:",
@@ -151,6 +166,7 @@ TEXTS = {
         "download_link": "डाउनलोड लिंक:",
         "request_button": "हे शीर्षक विनंती करा",
         "request_sent": "तुमची विनंती अॅडमिनला पाठवली आहे.",
+        "thank_you": "बॉट वापरल्याबद्दल धन्यवाद! आनंद घ्या.",
     },
     "gu": {
         "choose_language": "તમારી ભાષા પસંદ કરો:",
@@ -164,6 +180,7 @@ TEXTS = {
         "download_link": "ડાઉનલોડ લિંક:",
         "request_button": "આ શીર્ષક વિનંતી કરો",
         "request_sent": "તમારી વિનંતી એડમિનને મોકલવામાં આવી છે.",
+        "thank_you": "બોટ વાપરવા બદલ આભાર! માણો.",
     },
 }
 
@@ -217,6 +234,7 @@ def build_results_keyboard(titles, page: int = 0):
 
 # ---------- /start ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    register_user(update.effective_user.id)
     buttons = [
         [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
         for code, name in LANGUAGES.items()
@@ -261,6 +279,10 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     existing_title = find_existing_title(title)
     db.setdefault(existing_title, {})[quality] = link
     save_state("content", DB_FILE, db)
+
+    title_meta.setdefault(existing_title, {})["added_at"] = datetime.now(timezone.utc).isoformat()
+    save_state("meta", META_FILE, title_meta)
+
     await update.message.reply_text(f"যোগ হয়েছে ✅\nটাইটেল: {existing_title}\nকোয়ালিটি: {quality}")
 
 async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -276,9 +298,66 @@ async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if title in db:
         del db[title]
         save_state("content", DB_FILE, db)
+        if title in title_meta:
+            del title_meta[title]
+            save_state("meta", META_FILE, title_meta)
         await update.message.reply_text(f"ডিলিট হয়েছে ✅: {title}")
     else:
         await update.message.reply_text("এই টাইটেল পাওয়া যায়নি।")
+
+async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    titles = list(db.keys())
+    if not titles:
+        await update.message.reply_text("এখনো কোনো টাইটেল যোগ করা হয়নি।")
+        return
+    shown = titles[:100]
+    text = f"মোট টাইটেল: {len(titles)}\n\n" + "\n".join(f"• {x}" for x in shown)
+    if len(titles) > 100:
+        text += f"\n... আরও {len(titles) - 100}টা আছে"
+    await update.message.reply_text(text)
+
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    total_titles = len(db)
+    total_links = sum(len(q) for q in db.values())
+    total_users = len(known_users)
+    await update.message.reply_text(
+        f"📊 পরিসংখ্যান\nটাইটেল: {total_titles}\nমোট লিংক: {total_links}\nইউজার: {total_users}"
+    )
+
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text("এভাবে লিখো:\n/broadcast তোমার মেসেজ")
+        return
+    message = parts[1].strip()
+    sent, failed = 0, 0
+    for user_id in list(known_users):
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message)
+            sent += 1
+        except Exception:
+            failed += 1
+    await update.message.reply_text(f"পাঠানো হয়েছে ✅\nসফল: {sent}\nব্যর্থ: {failed}")
+
+async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    register_user(uid)
+    titles_sorted = sorted(
+        db.keys(),
+        key=lambda x: title_meta.get(x, {}).get("added_at", ""),
+        reverse=True
+    )[:10]
+    if not titles_sorted:
+        await update.message.reply_text(t(uid, "not_found"))
+        return
+    last_search_results[uid] = titles_sorted
+    await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(titles_sorted, 0))
 
 # ---------- সার্চ ----------
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -286,6 +365,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not raw_query:
         return
     uid = update.effective_user.id
+    register_user(uid)
 
     matches = fuzzy_search(raw_query, db.keys())
 
@@ -354,7 +434,9 @@ async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(t(uid, "link_not_found"))
         return
 
-    await query.message.reply_text(f"{title} ({quality})\n{t(uid, 'download_link')}\n{link}")
+    await query.message.reply_text(
+        f"{title} ({quality})\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
+    )
 
 # ---------- webhook মোড (Render-এর জন্য) ----------
 async def run_webhook_server(application: Application, base_url: str, port: int):
@@ -389,6 +471,10 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("remove", remove_content))
+    application.add_handler(CommandHandler("list", list_titles))
+    application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("broadcast", broadcast))
+    application.add_handler(CommandHandler("latest", latest))
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
