@@ -3,6 +3,7 @@ import json
 import logging
 import asyncio
 import difflib
+import re
 from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -343,27 +344,45 @@ async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text or ""
     parts = text.split(" ", 1)
-    if len(parts) < 2 or "|" not in parts[1]:
+    if len(parts) < 2 or not parts[1].strip():
         await update.message.reply_text(
-            "ফরম্যাট ভুল। এভাবে লিখো:\n"
-            "/migrate পুরনো টাইটেল | নতুন টাইটেল | সিজন | এপিসোড\n"
-            "উদাহরণ: /migrate Daredevil Hindi SO2 EO1 | Daredevil Hindi | Season 2 | Episode 1"
+            "পুরনো টাইটেলটা হুবহু বসিয়ে দাও, যেমন তুমি /add-এ লিখেছিলে:\n"
+            "/migrate Daredevil Hindi SO2 EO1"
         )
         return
 
-    segments = [s.strip() for s in parts[1].split("|")]
-    if len(segments) != 4 or not all(segments):
-        await update.message.reply_text(
-            "ফরম্যাট ভুল। এভাবে লিখো:\n"
-            "/migrate পুরনো টাইটেল | নতুন টাইটেল | সিজন | এপিসোড"
-        )
-        return
+    raw = parts[1].strip()
 
-    old_title, new_title, season, episode = segments
+    if "|" in raw:
+        # ম্যানুয়াল মোড — টাইটেলে SO/EO প্যাটার্ন না থাকলে এটা ব্যবহার করো
+        segments = [s.strip() for s in raw.split("|")]
+        if len(segments) != 4 or not all(segments):
+            await update.message.reply_text(
+                "ফরম্যাট ভুল। এভাবে লিখো:\n"
+                "/migrate পুরনো টাইটেল | নতুন টাইটেল | সিজন | এপিসোড"
+            )
+            return
+        old_title, new_title, season_label, episode_label = segments
+    else:
+        # অটো মোড — টাইটেল থেকে SO<নম্বর> আর EO<নম্বর> নিজে খুঁজে বের করবে
+        old_title = raw
+        season_match = re.search(r"\bSO\s*(\d+)\b", old_title, re.IGNORECASE)
+        episode_match = re.search(r"\bEO\s*(\d+)\b", old_title, re.IGNORECASE)
+        if not season_match or not episode_match:
+            await update.message.reply_text(
+                "টাইটেলে SO আর EO প্যাটার্ন (যেমন SO2, EO1) খুঁজে পাইনি।\n"
+                "ম্যানুয়ালি লিখতে চাইলে এভাবে লেখো:\n"
+                "/migrate পুরনো টাইটেল | নতুন টাইটেল | সিজন | এপিসোড"
+            )
+            return
+        season_label = f"Season {season_match.group(1)}"
+        episode_label = f"Episode {episode_match.group(1)}"
+        cutoff = min(season_match.start(), episode_match.start())
+        new_title = old_title[:cutoff].strip() or old_title
+
     matched_old = find_existing_title(old_title)
-
     if matched_old not in db:
-        await update.message.reply_text("পুরনো টাইটেলটা পাওয়া যায়নি। /list দিয়ে সঠিক নামটা চেক করে নাও।")
+        await update.message.reply_text("পুরনো টাইটেলটা পাওয়া যায়নি। /list দিয়ে সঠিক নামটা কপি করে আবার চেষ্টা করো।")
         return
 
     old_node = db[matched_old]
@@ -378,11 +397,11 @@ async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     db.setdefault(new_existing_title, {})
-    db[new_existing_title].setdefault(season, {})
-    if db[new_existing_title][season] and is_leaf_level(db[new_existing_title][season]):
-        await update.message.reply_text("এই সিজনের নিচে আগে থেকেই ফ্ল্যাট এন্ট্রি আছে, সিজনের নামটা আরেকবার চেক করো।")
+    db[new_existing_title].setdefault(season_label, {})
+    if db[new_existing_title][season_label] and is_leaf_level(db[new_existing_title][season_label]):
+        await update.message.reply_text("এই সিজনের নিচে আগে থেকেই ফ্ল্যাট এন্ট্রি আছে, ম্যানুয়ালি চেক করে নাও।")
         return
-    db[new_existing_title][season][episode] = old_node
+    db[new_existing_title][season_label][episode_label] = old_node
 
     if matched_old != new_existing_title:
         del db[matched_old]
@@ -394,8 +413,95 @@ async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("meta", META_FILE, title_meta)
 
     await update.message.reply_text(
-        f"মাইগ্রেট হয়েছে ✅\n{matched_old} → {new_existing_title} / {season} / {episode}\n"
+        f"মাইগ্রেট হয়েছে ✅\n{matched_old} → {new_existing_title} / {season_label} / {episode_label}\n"
         f"({len(old_node)}টা কোয়ালিটি নিয়ে যাওয়া হয়েছে)"
+    )
+
+async def fix_season(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(
+            "এভাবে লিখো:\n"
+            "/fixseason টাইটেল | ভুল সিজন | এপিসোড | সঠিক সিজন\n"
+            "উদাহরণ: /fixseason Daredevil Hindi | Season 2 | Episode 1 | Season 1"
+        )
+        return
+
+    segments = [s.strip() for s in parts[1].split("|")]
+    if len(segments) != 4 or not all(segments):
+        await update.message.reply_text(
+            "ফরম্যাট ভুল। এভাবে লিখো:\n"
+            "/fixseason টাইটেল | ভুল সিজন | এপিসোড | সঠিক সিজন"
+        )
+        return
+
+    title, wrong_season, episode, correct_season = segments
+    matched_title = find_existing_title(title)
+
+    if matched_title not in db or is_leaf_level(db[matched_title]):
+        await update.message.reply_text("এই টাইটেলে সিজন-স্ট্রাকচার পাওয়া যায়নি। /list দিয়ে সঠিক নামটা চেক করো।")
+        return
+
+    node = db[matched_title]
+    if wrong_season not in node:
+        await update.message.reply_text(f"'{wrong_season}' নামে কোনো সিজন পাওয়া যায়নি '{matched_title}'-এ।")
+        return
+
+    season_node = node[wrong_season]
+    if episode not in season_node:
+        await update.message.reply_text(f"'{episode}' নামে কোনো এপিসোড পাওয়া যায়নি '{wrong_season}'-এ।")
+        return
+
+    episode_data = season_node.pop(episode)
+    if not season_node:
+        del node[wrong_season]
+
+    node.setdefault(correct_season, {})
+    if node[correct_season] and is_leaf_level(node[correct_season]):
+        node.setdefault(wrong_season, {})[episode] = episode_data
+        await update.message.reply_text("সঠিক সিজনের জায়গায় আগে থেকেই ফ্ল্যাট এন্ট্রি আছে, কিছু বদলানো হয়নি।")
+        return
+    node[correct_season][episode] = episode_data
+
+    save_state("content", DB_FILE, db)
+    await update.message.reply_text(
+        f"ঠিক হয়ে গেছে ✅\n{matched_title} / {wrong_season} / {episode} → {matched_title} / {correct_season} / {episode}"
+    )
+
+async def move_episode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(
+            "এভাবে লিখো:\n/moveepisode টাইটেল | পুরনো সিজন | পুরনো এপিসোড | নতুন সিজন | নতুন এপিসোড"
+        )
+        return
+    segments = [s.strip() for s in parts[1].split("|")]
+    if len(segments) != 5 or not all(segments):
+        await update.message.reply_text(
+            "ফরম্যাট ভুল। এভাবে লিখো:\n/moveepisode টাইটেল | পুরনো সিজন | পুরনো এপিসোড | নতুন সিজন | নতুন এপিসোড"
+        )
+        return
+    title, old_season, old_episode, new_season, new_episode = segments
+    matched_title = find_existing_title(title)
+    if matched_title not in db or old_season not in db[matched_title] or old_episode not in db[matched_title][old_season]:
+        await update.message.reply_text("এই সিজন/এপিসোড পাওয়া যায়নি। /list দিয়ে টাইটেলটা চেক করো।")
+        return
+
+    node = db[matched_title]
+    episode_data = node[old_season].pop(old_episode)
+    if not node[old_season]:
+        del node[old_season]
+    node.setdefault(new_season, {})
+    node[new_season][new_episode] = episode_data
+    save_state("content", DB_FILE, db)
+
+    await update.message.reply_text(
+        f"ঠিক করা হয়েছে ✅\n{matched_title} / {old_season} / {old_episode}  →  {matched_title} / {new_season} / {new_episode}"
     )
 
 async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -669,6 +775,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
     application.add_handler(CommandHandler("migrate", migrate_content))
+    application.add_handler(CommandHandler("moveepisode", move_episode))
     application.add_handler(CommandHandler("remove", remove_content))
     application.add_handler(CommandHandler("list", list_titles))
     application.add_handler(CommandHandler("stats", stats))
