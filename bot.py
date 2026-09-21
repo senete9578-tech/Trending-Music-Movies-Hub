@@ -66,6 +66,7 @@ known_users = set(load_state("users", USERS_FILE, []))
 # শুধু এই সেশনে চালু থাকা, রিস্টার্টে মুছে যাওয়া অস্থায়ী ডাটা
 last_search_results = {}   # user_id -> [title, ...]  (পেজিনেশনের জন্য)
 pending_request = {}       # user_id -> query text     (রিকোয়েস্ট বাটনের জন্য)
+browse_state = {}          # user_id -> {"title":..., "path":[...], "children":[...]}  (সিজন/এপিসোড নেভিগেশনের জন্য)
 
 def register_user(user_id: int):
     if user_id not in known_users:
@@ -97,6 +98,7 @@ TEXTS = {
         "request_button": "Request this title",
         "request_sent": "Your request has been sent to the admin.",
         "thank_you": "Thank you for using the bot! Enjoy watching.",
+        "select_option": "Select:",
     },
     "hi": {
         "choose_language": "अपनी भाषा चुनें:",
@@ -111,6 +113,7 @@ TEXTS = {
         "request_button": "यह टाइटल रिक्वेस्ट करें",
         "request_sent": "आपका अनुरोध एडमिन को भेज दिया गया है।",
         "thank_you": "बॉट इस्तेमाल करने के लिए धन्यवाद! देखने का आनंद लें।",
+        "select_option": "चुनें:",
     },
     "bn": {
         "choose_language": "আপনার ভাষা নির্বাচন করুন:",
@@ -125,6 +128,7 @@ TEXTS = {
         "request_button": "এই টাইটেল রিকোয়েস্ট করো",
         "request_sent": "তোমার রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে।",
         "thank_you": "বট ব্যবহার করার জন্য ধন্যবাদ! উপভোগ করো।",
+        "select_option": "সিলেক্ট করো:",
     },
     "ta": {
         "choose_language": "உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
@@ -139,6 +143,7 @@ TEXTS = {
         "request_button": "இந்த தலைப்பை கோரவும்",
         "request_sent": "உங்கள் கோரிக்கை நிர்வாகிக்கு அனுப்பப்பட்டது.",
         "thank_you": "பாட்டைப் பயன்படுத்தியதற்கு நன்றி! பார்த்து மகிழுங்கள்.",
+        "select_option": "தேர்ந்தெடுக்கவும்:",
     },
     "te": {
         "choose_language": "మీ భాషను ఎంచుకోండి:",
@@ -153,6 +158,7 @@ TEXTS = {
         "request_button": "ఈ టైటిల్ అభ్యర్థించండి",
         "request_sent": "మీ అభ్యర్థన అడ్మిన్‌కు పంపబడింది.",
         "thank_you": "బాట్ ఉపయోగించినందుకు ధన్యవాదాలు! ఆనందించండి.",
+        "select_option": "ఎంచుకోండి:",
     },
     "mr": {
         "choose_language": "तुमची भाषा निवडा:",
@@ -167,6 +173,7 @@ TEXTS = {
         "request_button": "हे शीर्षक विनंती करा",
         "request_sent": "तुमची विनंती अॅडमिनला पाठवली आहे.",
         "thank_you": "बॉट वापरल्याबद्दल धन्यवाद! आनंद घ्या.",
+        "select_option": "निवडा:",
     },
     "gu": {
         "choose_language": "તમારી ભાષા પસંદ કરો:",
@@ -181,6 +188,7 @@ TEXTS = {
         "request_button": "આ શીર્ષક વિનંતી કરો",
         "request_sent": "તમારી વિનંતી એડમિનને મોકલવામાં આવી છે.",
         "thank_you": "બોટ વાપરવા બદલ આભાર! માણો.",
+        "select_option": "પસંદ કરો:",
     },
 }
 
@@ -197,6 +205,13 @@ def find_existing_title(title: str) -> str:
         if existing.strip().lower() == normalized:
             return existing
     return title
+
+def is_leaf_level(node: dict) -> bool:
+    """node-এর ভ্যালুগুলো স্ট্রিং (লিংক) হলে এটাই শেষ ধাপ (কোয়ালিটি লেভেল);
+    ভ্যালুগুলো dict হলে আরও গভীরে যেতে হবে (যেমন সিজন -> এপিসোড)।"""
+    if not node:
+        return True
+    return isinstance(next(iter(node.values())), str)
 
 def fuzzy_search(query: str, titles, limit: int = 200):
     query = query.strip().lower()
@@ -284,6 +299,43 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("meta", META_FILE, title_meta)
 
     await update.message.reply_text(f"যোগ হয়েছে ✅\nটাইটেল: {existing_title}\nকোয়ালিটি: {quality}")
+
+async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    text = update.message.text or ""
+    parts = text.split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(
+            "ফরম্যাট ভুল। এভাবে লিখো:\n"
+            "/addseries টাইটেল | সিজন | এপিসোড | কোয়ালিটি | লিংক\n"
+            "উদাহরণ: /addseries Money Heist | Season 1 | Episode 1 | 720 | https://drive.google.com/xyz"
+        )
+        return
+
+    segments = [s.strip() for s in parts[1].split("|")]
+    if len(segments) != 5 or not all(segments):
+        await update.message.reply_text(
+            "ফরম্যাট ভুল। এভাবে লিখো:\n"
+            "/addseries টাইটেল | সিজন | এপিসোড | কোয়ালিটি | লিংক"
+        )
+        return
+
+    title, season, episode, quality, link = segments
+    existing_title = find_existing_title(title)
+    db.setdefault(existing_title, {})
+    db[existing_title].setdefault(season, {})
+    db[existing_title][season].setdefault(episode, {})
+    db[existing_title][season][episode][quality] = link
+    save_state("content", DB_FILE, db)
+
+    title_meta.setdefault(existing_title, {})["added_at"] = datetime.now(timezone.utc).isoformat()
+    save_state("meta", META_FILE, title_meta)
+
+    await update.message.reply_text(
+        f"যোগ হয়েছে ✅\nটাইটেল: {existing_title}\nসিজন: {season}\nএপিসোড: {episode}\nকোয়ালিটি: {quality}"
+    )
 
 async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -404,25 +456,109 @@ async def request_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
     await query.edit_message_text(t(uid, "request_sent"))
 
-# ---------- টাইটেল সিলেক্ট করলে কোয়ালিটি দেখানো ----------
+# ---------- টাইটেল সিলেক্ট করলে (মুভি হলে কোয়ালিটি, সিরিজ হলে সিজন দেখানো) ----------
 async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
     title = query.data.split("::", 1)[1]
 
-    qualities = db.get(title, {})
-    if not qualities:
+    node = db.get(title, {})
+    if not node:
         await query.edit_message_text(t(uid, "content_unavailable"))
         return
 
-    buttons = [
-        [InlineKeyboardButton(q, callback_data=f"get::{title}::{q}")]
-        for q in qualities.keys()
-    ]
-    await query.edit_message_text(f"{title}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons))
+    if is_leaf_level(node):
+        # সাধারণ মুভি/গান — সরাসরি কোয়ালিটি দেখাও
+        buttons = [
+            [InlineKeyboardButton(q, callback_data=f"get::{title}::{q}")]
+            for q in node.keys()
+        ]
+        await query.edit_message_text(
+            f"{title}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    else:
+        # সিরিজ — সিজন (বা পরের ধাপ) দেখাও
+        browse_state[uid] = {"title": title, "path": [], "children": list(node.keys())}
+        buttons = [
+            [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
+            for i, k in enumerate(node.keys())
+        ]
+        await query.edit_message_text(
+            f"{title}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
+        )
 
-# ---------- কোয়ালিটি সিলেক্ট করলে ডাউনলোড লিংক পাঠানো ----------
+async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    state = browse_state.get(uid)
+    if not state:
+        return
+
+    idx = int(query.data.split("::", 1)[1])
+    if idx >= len(state["children"]):
+        return
+    chosen_key = state["children"][idx]
+    state["path"] = state["path"] + [chosen_key]
+
+    node = db.get(state["title"], {})
+    for key in state["path"]:
+        node = node.get(key, {})
+
+    if not node:
+        await query.edit_message_text(t(uid, "content_unavailable"))
+        return
+
+    label = f"{state['title']} - {' / '.join(state['path'])}"
+
+    if is_leaf_level(node):
+        state["children"] = list(node.keys())
+        buttons = [
+            [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
+            for i, q in enumerate(node.keys())
+        ]
+        await query.edit_message_text(
+            f"{label}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    else:
+        state["children"] = list(node.keys())
+        buttons = [
+            [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
+            for i, k in enumerate(node.keys())
+        ]
+        await query.edit_message_text(
+            f"{label}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    state = browse_state.get(uid)
+    if not state:
+        return
+
+    idx = int(query.data.split("::", 1)[1])
+    if idx >= len(state["children"]):
+        return
+    quality = state["children"][idx]
+
+    node = db.get(state["title"], {})
+    for key in state["path"]:
+        node = node.get(key, {})
+    link = node.get(quality)
+
+    if not link:
+        await query.message.reply_text(t(uid, "link_not_found"))
+        return
+
+    label = f"{state['title']} - {' / '.join(state['path'])} ({quality})"
+    await query.message.reply_text(
+        f"{label}\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
+    )
+
+# ---------- কোয়ালিটি সিলেক্ট করলে ডাউনলোড লিংক পাঠানো (সাধারণ মুভি/গান) ----------
 async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -470,6 +606,7 @@ def build_application() -> Application:
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
+    application.add_handler(CommandHandler("addseries", add_series_content))
     application.add_handler(CommandHandler("remove", remove_content))
     application.add_handler(CommandHandler("list", list_titles))
     application.add_handler(CommandHandler("stats", stats))
@@ -478,6 +615,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
+    application.add_handler(CallbackQueryHandler(navigate, pattern=r"^nav::"))
+    application.add_handler(CallbackQueryHandler(send_file_nav, pattern=r"^getnav::"))
     application.add_handler(CallbackQueryHandler(paginate, pattern=r"^page::"))
     application.add_handler(CallbackQueryHandler(request_title, pattern=r"^request$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
