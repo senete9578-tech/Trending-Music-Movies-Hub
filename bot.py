@@ -214,6 +214,9 @@ def is_leaf_level(node: dict) -> bool:
         return True
     return isinstance(next(iter(node.values())), str)
 
+def natural_sort_key(text: str):
+    return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
+
 def fuzzy_search(query: str, titles, limit: int = 200):
     query = query.strip().lower()
     if not query:
@@ -221,6 +224,7 @@ def fuzzy_search(query: str, titles, limit: int = 200):
 
     exact = [t for t in titles if query in t.lower()]
     if exact:
+        exact.sort(key=natural_sort_key)
         return exact[:limit]
 
     scored = []
@@ -663,10 +667,12 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_leaf_level(node):
         # সাধারণ মুভি/গান — সরাসরি কোয়ালিটি দেখাও
+        browse_state.pop(uid, None)
         buttons = [
             [InlineKeyboardButton(q, callback_data=f"get::{title}::{q}")]
             for q in node.keys()
         ]
+        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
         await query.edit_message_text(
             f"{title}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
@@ -677,6 +683,7 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
             for i, k in enumerate(node.keys())
         ]
+        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
         await query.edit_message_text(
             f"{title}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
@@ -711,6 +718,7 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
             for i, q in enumerate(node.keys())
         ]
+        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
         await query.edit_message_text(
             f"{label}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
@@ -720,9 +728,50 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
             for i, k in enumerate(node.keys())
         ]
+        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
         await query.edit_message_text(
             f"{label}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
+
+async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    state = browse_state.get(uid)
+
+    if state and state["path"]:
+        state["path"] = state["path"][:-1]
+        node = db.get(state["title"], {})
+        for key in state["path"]:
+            node = node.get(key, {})
+
+        if not node:
+            await query.edit_message_text(t(uid, "content_unavailable"))
+            return
+
+        label = state["title"] if not state["path"] else f"{state['title']} - {' / '.join(state['path'])}"
+        state["children"] = list(node.keys())
+
+        if is_leaf_level(node):
+            buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(node.keys())]
+            option_key = "select_quality"
+        else:
+            buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(node.keys())]
+            option_key = "select_option"
+        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
+
+        await query.edit_message_text(
+            f"{label}\n{t(uid, option_key)}", reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
+
+    # path খালি (বা কোনো state নেই) — সার্চ রেজাল্টে ফিরে যাও
+    browse_state.pop(uid, None)
+    titles = last_search_results.get(uid, [])
+    if titles:
+        await query.edit_message_text(t(uid, "results"), reply_markup=build_results_keyboard(titles, 0))
+    else:
+        await query.edit_message_text(t(uid, "not_found"))
 
 async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -812,6 +861,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
     application.add_handler(CallbackQueryHandler(navigate, pattern=r"^nav::"))
+    application.add_handler(CallbackQueryHandler(go_back, pattern=r"^navback$"))
     application.add_handler(CallbackQueryHandler(send_file_nav, pattern=r"^getnav::"))
     application.add_handler(CallbackQueryHandler(paginate, pattern=r"^page::"))
     application.add_handler(CallbackQueryHandler(request_title, pattern=r"^request$"))
