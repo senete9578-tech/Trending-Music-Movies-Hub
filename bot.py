@@ -337,6 +337,67 @@ async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"যোগ হয়েছে ✅\nটাইটেল: {existing_title}\nসিজন: {season}\nএপিসোড: {episode}\nকোয়ালিটি: {quality}"
     )
 
+async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    text = update.message.text or ""
+    parts = text.split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(
+            "ফরম্যাট ভুল। এভাবে লিখো:\n"
+            "/migrate পুরনো টাইটেল | নতুন টাইটেল | সিজন | এপিসোড\n"
+            "উদাহরণ: /migrate Daredevil Hindi SO2 EO1 | Daredevil Hindi | Season 2 | Episode 1"
+        )
+        return
+
+    segments = [s.strip() for s in parts[1].split("|")]
+    if len(segments) != 4 or not all(segments):
+        await update.message.reply_text(
+            "ফরম্যাট ভুল। এভাবে লিখো:\n"
+            "/migrate পুরনো টাইটেল | নতুন টাইটেল | সিজন | এপিসোড"
+        )
+        return
+
+    old_title, new_title, season, episode = segments
+    matched_old = find_existing_title(old_title)
+
+    if matched_old not in db:
+        await update.message.reply_text("পুরনো টাইটেলটা পাওয়া যায়নি। /list দিয়ে সঠিক নামটা চেক করে নাও।")
+        return
+
+    old_node = db[matched_old]
+    if not is_leaf_level(old_node):
+        await update.message.reply_text("এই টাইটেলটা এমনিতেই সিরিজ ফরম্যাটে আছে, মাইগ্রেট করার দরকার নেই।")
+        return
+
+    new_existing_title = find_existing_title(new_title)
+    existing_new_node = db.get(new_existing_title, {})
+    if existing_new_node and is_leaf_level(existing_new_node):
+        await update.message.reply_text("নতুন টাইটেলে আগে থেকেই ফ্ল্যাট (নন-সিরিজ) এন্ট্রি আছে — আগে সেটা /remove করে নাও।")
+        return
+
+    db.setdefault(new_existing_title, {})
+    db[new_existing_title].setdefault(season, {})
+    if db[new_existing_title][season] and is_leaf_level(db[new_existing_title][season]):
+        await update.message.reply_text("এই সিজনের নিচে আগে থেকেই ফ্ল্যাট এন্ট্রি আছে, সিজনের নামটা আরেকবার চেক করো।")
+        return
+    db[new_existing_title][season][episode] = old_node
+
+    if matched_old != new_existing_title:
+        del db[matched_old]
+    save_state("content", DB_FILE, db)
+
+    if matched_old in title_meta and matched_old != new_existing_title:
+        del title_meta[matched_old]
+    title_meta.setdefault(new_existing_title, {})["added_at"] = datetime.now(timezone.utc).isoformat()
+    save_state("meta", META_FILE, title_meta)
+
+    await update.message.reply_text(
+        f"মাইগ্রেট হয়েছে ✅\n{matched_old} → {new_existing_title} / {season} / {episode}\n"
+        f"({len(old_node)}টা কোয়ালিটি নিয়ে যাওয়া হয়েছে)"
+    )
+
 async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -607,6 +668,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
+    application.add_handler(CommandHandler("migrate", migrate_content))
     application.add_handler(CommandHandler("remove", remove_content))
     application.add_handler(CommandHandler("list", list_titles))
     application.add_handler(CommandHandler("stats", stats))
