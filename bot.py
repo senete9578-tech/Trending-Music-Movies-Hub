@@ -504,6 +504,32 @@ async def move_episode(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"ঠিক করা হয়েছে ✅\n{matched_title} / {old_season} / {old_episode}  →  {matched_title} / {new_season} / {new_episode}"
     )
 
+async def remove_episode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(
+            "এভাবে লিখো:\n/removeepisode টাইটেল | সিজন | এপিসোড"
+        )
+        return
+    segments = [s.strip() for s in parts[1].split("|")]
+    if len(segments) != 3 or not all(segments):
+        await update.message.reply_text("ফরম্যাট ভুল। এভাবে লিখো:\n/removeepisode টাইটেল | সিজন | এপিসোড")
+        return
+    title, season, episode = segments
+    matched_title = find_existing_title(title)
+    if matched_title not in db or season not in db[matched_title] or episode not in db[matched_title][season]:
+        await update.message.reply_text("এই সিজন/এপিসোড পাওয়া যায়নি। /list দিয়ে চেক করো।")
+        return
+
+    del db[matched_title][season][episode]
+    if not db[matched_title][season]:
+        del db[matched_title][season]
+    save_state("content", DB_FILE, db)
+
+    await update.message.reply_text(f"ডিলিট হয়েছে ✅: {matched_title} / {season} / {episode}")
+
 async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -776,6 +802,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("addseries", add_series_content))
     application.add_handler(CommandHandler("migrate", migrate_content))
     application.add_handler(CommandHandler("moveepisode", move_episode))
+    application.add_handler(CommandHandler("removeepisode", remove_episode))
     application.add_handler(CommandHandler("remove", remove_content))
     application.add_handler(CommandHandler("list", list_titles))
     application.add_handler(CommandHandler("stats", stats))
