@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import asyncio
+import difflib
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -153,6 +154,37 @@ def t(user_id: int, key: str) -> str:
     lang = get_lang(user_id)
     return TEXTS.get(lang, TEXTS["en"])[key]
 
+def find_existing_title(title: str) -> str:
+    """ছোট/বড় হাতের অক্ষর বা স্পেসিং একটু ভিন্ন হলেও একই টাইটেল হিসেবে গণ্য করা,
+    যাতে ভুলবশত একই মুভির ডুপ্লিকেট এন্ট্রি তৈরি না হয়।"""
+    normalized = title.strip().lower()
+    for existing in db.keys():
+        if existing.strip().lower() == normalized:
+            return existing
+    return title
+
+def fuzzy_search(query: str, titles, limit: int = 15):
+    """আগে হুবহু মিল খোঁজে; কিছু না পেলে বানান একটু ভুল থাকলেও কাছাকাছি মিল খুঁজে বের করে।"""
+    query = query.strip().lower()
+    if not query:
+        return []
+
+    exact = [t for t in titles if query in t.lower()]
+    if exact:
+        return exact[:limit]
+
+    scored = []
+    for title in titles:
+        title_lower = title.lower()
+        best_ratio = difflib.SequenceMatcher(None, query, title_lower).ratio()
+        for word in title_lower.split():
+            best_ratio = max(best_ratio, difflib.SequenceMatcher(None, query, word).ratio())
+        if best_ratio >= 0.6:
+            scored.append((best_ratio, title))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [title for _, title in scored[:limit]]
+
 # ---------- /start: ভাষা সিলেক্ট করতে বলা ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
@@ -203,9 +235,10 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     title, quality, link = segments
-    db.setdefault(title, {})[quality] = link
+    existing_title = find_existing_title(title)
+    db.setdefault(existing_title, {})[quality] = link
     save_state("content", DB_FILE, db)
-    await update.message.reply_text(f"যোগ হয়েছে ✅\nটাইটেল: {title}\nকোয়ালিটি: {quality}")
+    await update.message.reply_text(f"যোগ হয়েছে ✅\nটাইটেল: {existing_title}\nকোয়ালিটি: {quality}")
 
 # ---------- অ্যাডমিন: কনটেন্ট ডিলিট করা ----------
 async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -232,7 +265,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     uid = update.effective_user.id
 
-    matches = [title for title in db.keys() if query in title.lower()]
+    matches = fuzzy_search(query, db.keys())
 
     if not matches:
         await update.message.reply_text(t(uid, "not_found"))
