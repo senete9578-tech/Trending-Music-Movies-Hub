@@ -27,7 +27,9 @@ MONGO_URI = os.environ.get("MONGO_URI")
 DB_FILE = "data.json"
 LANG_FILE = "lang.json"
 
-# ---------- ডাটা লোড/সেভ (MongoDB থাকলে সেটা ব্যবহার হবে, নাহলে লোকাল ফাইল — যেটা Render রিস্টার্টে মুছে যায়) ----------
+PAGE_SIZE = 10
+
+# ---------- ডাটা লোড/সেভ (MongoDB থাকলে সেটা ব্যবহার হবে, নাহলে লোকাল ফাইল) ----------
 mongo_client = MongoClient(MONGO_URI, tlsCAFile=certifi.where()) if MONGO_URI else None
 mongo_state = mongo_client["telegram_bot"]["state"] if mongo_client else None
 
@@ -53,8 +55,12 @@ def save_state(key, path, data):
     else:
         save_json(path, data)
 
-db = load_state("content", DB_FILE, {})          # { "title": { "quality": "link" } }
+db = load_state("content", DB_FILE, {})            # { "title": { "quality": "link" } }
 user_lang = load_state("languages", LANG_FILE, {})  # { "user_id": "lang_code" }
+
+# শুধু এই সেশনে চালু থাকা, রিস্টার্টে মুছে যাওয়া অস্থায়ী ডাটা
+last_search_results = {}   # user_id -> [title, ...]  (পেজিনেশনের জন্য)
+pending_request = {}       # user_id -> query text     (রিকোয়েস্ট বাটনের জন্য)
 
 # ---------- ভাষা ----------
 LANGUAGES = {
@@ -78,6 +84,8 @@ TEXTS = {
         "content_unavailable": "This content is no longer available.",
         "link_not_found": "Link not found.",
         "download_link": "Download link:",
+        "request_button": "Request this title",
+        "request_sent": "Your request has been sent to the admin.",
     },
     "hi": {
         "choose_language": "अपनी भाषा चुनें:",
@@ -89,6 +97,8 @@ TEXTS = {
         "content_unavailable": "यह सामग्री अब उपलब्ध नहीं है।",
         "link_not_found": "लिंक नहीं मिला।",
         "download_link": "डाउनलोड लिंक:",
+        "request_button": "यह टाइटल रिक्वेस्ट करें",
+        "request_sent": "आपका अनुरोध एडमिन को भेज दिया गया है।",
     },
     "bn": {
         "choose_language": "আপনার ভাষা নির্বাচন করুন:",
@@ -100,6 +110,8 @@ TEXTS = {
         "content_unavailable": "এই কনটেন্ট আর পাওয়া যাচ্ছে না।",
         "link_not_found": "লিংক পাওয়া যায়নি।",
         "download_link": "ডাউনলোড লিংক:",
+        "request_button": "এই টাইটেল রিকোয়েস্ট করো",
+        "request_sent": "তোমার রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে।",
     },
     "ta": {
         "choose_language": "உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
@@ -111,6 +123,8 @@ TEXTS = {
         "content_unavailable": "இந்த உள்ளடக்கம் இனி கிடைக்கவில்லை.",
         "link_not_found": "இணைப்பு கிடைக்கவில்லை.",
         "download_link": "பதிவிறக்க இணைப்பு:",
+        "request_button": "இந்த தலைப்பை கோரவும்",
+        "request_sent": "உங்கள் கோரிக்கை நிர்வாகிக்கு அனுப்பப்பட்டது.",
     },
     "te": {
         "choose_language": "మీ భాషను ఎంచుకోండి:",
@@ -122,6 +136,8 @@ TEXTS = {
         "content_unavailable": "ఈ కంటెంట్ ఇకపై అందుబాటులో లేదు.",
         "link_not_found": "లింక్ కనుగొనబడలేదు.",
         "download_link": "డౌన్‌లోడ్ లింక్:",
+        "request_button": "ఈ టైటిల్ అభ్యర్థించండి",
+        "request_sent": "మీ అభ్యర్థన అడ్మిన్‌కు పంపబడింది.",
     },
     "mr": {
         "choose_language": "तुमची भाषा निवडा:",
@@ -133,6 +149,8 @@ TEXTS = {
         "content_unavailable": "ही सामग्री यापुढे उपलब्ध नाही.",
         "link_not_found": "लिंक सापडली नाही.",
         "download_link": "डाउनलोड लिंक:",
+        "request_button": "हे शीर्षक विनंती करा",
+        "request_sent": "तुमची विनंती अॅडमिनला पाठवली आहे.",
     },
     "gu": {
         "choose_language": "તમારી ભાષા પસંદ કરો:",
@@ -144,6 +162,8 @@ TEXTS = {
         "content_unavailable": "આ સામગ્રી હવે ઉપલબ્ધ નથી.",
         "link_not_found": "લિંક મળી નથી.",
         "download_link": "ડાઉનલોડ લિંક:",
+        "request_button": "આ શીર્ષક વિનંતી કરો",
+        "request_sent": "તમારી વિનંતી એડમિનને મોકલવામાં આવી છે.",
     },
 }
 
@@ -155,16 +175,13 @@ def t(user_id: int, key: str) -> str:
     return TEXTS.get(lang, TEXTS["en"])[key]
 
 def find_existing_title(title: str) -> str:
-    """ছোট/বড় হাতের অক্ষর বা স্পেসিং একটু ভিন্ন হলেও একই টাইটেল হিসেবে গণ্য করা,
-    যাতে ভুলবশত একই মুভির ডুপ্লিকেট এন্ট্রি তৈরি না হয়।"""
     normalized = title.strip().lower()
     for existing in db.keys():
         if existing.strip().lower() == normalized:
             return existing
     return title
 
-def fuzzy_search(query: str, titles, limit: int = 15):
-    """আগে হুবহু মিল খোঁজে; কিছু না পেলে বানান একটু ভুল থাকলেও কাছাকাছি মিল খুঁজে বের করে।"""
+def fuzzy_search(query: str, titles, limit: int = 200):
     query = query.strip().lower()
     if not query:
         return []
@@ -185,7 +202,20 @@ def fuzzy_search(query: str, titles, limit: int = 15):
     scored.sort(key=lambda x: x[0], reverse=True)
     return [title for _, title in scored[:limit]]
 
-# ---------- /start: ভাষা সিলেক্ট করতে বলা ----------
+def build_results_keyboard(titles, page: int = 0):
+    start = page * PAGE_SIZE
+    page_titles = titles[start:start + PAGE_SIZE]
+    buttons = [[InlineKeyboardButton(title, callback_data=f"title::{title}")] for title in page_titles]
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("◀️", callback_data=f"page::{page - 1}"))
+    if start + PAGE_SIZE < len(titles):
+        nav_row.append(InlineKeyboardButton("▶️", callback_data=f"page::{page + 1}"))
+    if nav_row:
+        buttons.append(nav_row)
+    return InlineKeyboardMarkup(buttons)
+
+# ---------- /start ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
@@ -197,7 +227,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# ---------- ভাষা সিলেক্ট করলে ----------
 async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -206,12 +235,9 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("languages", LANG_FILE, user_lang)
 
     texts = TEXTS[lang_code]
-    await query.edit_message_text(
-        f"{texts['language_set']}\n{texts['search_prompt']}"
-    )
+    await query.edit_message_text(f"{texts['language_set']}\n{texts['search_prompt']}")
 
 # ---------- অ্যাডমিন: লিংক যোগ করা ----------
-# ব্যবহার: /add টাইটেল | কোয়ালিটি | লিংক
 async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -222,16 +248,13 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "ফরম্যাট ভুল। এভাবে লিখো:\n"
             "/add টাইটেল | কোয়ালিটি | লিংক\n"
-            "উদাহরণ: /add Amar Movie | 720 | https://drive.google.com/xyz"
+            "উদাহরণ: /add Amar Movie | 720 | https://terabox.com/xyz"
         )
         return
 
     segments = [s.strip() for s in parts[1].split("|")]
     if len(segments) != 3 or not all(segments):
-        await update.message.reply_text(
-            "ফরম্যাট ভুল। এভাবে লিখো:\n"
-            "/add টাইটেল | কোয়ালিটি | লিংক"
-        )
+        await update.message.reply_text("ফরম্যাট ভুল। এভাবে লিখো:\n/add টাইটেল | কোয়ালিটি | লিংক")
         return
 
     title, quality, link = segments
@@ -240,7 +263,6 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("content", DB_FILE, db)
     await update.message.reply_text(f"যোগ হয়েছে ✅\nটাইটেল: {existing_title}\nকোয়ালিটি: {quality}")
 
-# ---------- অ্যাডমিন: কনটেন্ট ডিলিট করা ----------
 async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -260,22 +282,47 @@ async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- সার্চ ----------
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.message.text.strip().lower()
-    if not query:
+    raw_query = update.message.text.strip()
+    if not raw_query:
         return
     uid = update.effective_user.id
 
-    matches = fuzzy_search(query, db.keys())
+    matches = fuzzy_search(raw_query, db.keys())
 
     if not matches:
-        await update.message.reply_text(t(uid, "not_found"))
+        pending_request[uid] = raw_query
+        buttons = [[InlineKeyboardButton(t(uid, "request_button"), callback_data="request")]]
+        await update.message.reply_text(t(uid, "not_found"), reply_markup=InlineKeyboardMarkup(buttons))
         return
 
-    buttons = [
-        [InlineKeyboardButton(title, callback_data=f"title::{title}")]
-        for title in matches[:15]
-    ]
-    await update.message.reply_text(t(uid, "results"), reply_markup=InlineKeyboardMarkup(buttons))
+    last_search_results[uid] = matches
+    await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
+
+async def paginate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    page = int(query.data.split("::", 1)[1])
+    titles = last_search_results.get(uid, [])
+    if not titles:
+        return
+    await query.edit_message_reply_markup(reply_markup=build_results_keyboard(titles, page))
+
+async def request_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    text = pending_request.get(uid)
+    if text and ADMIN_ID:
+        username = query.from_user.username or query.from_user.first_name or str(uid)
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🔔 নতুন রিকোয়েস্ট @{username} (id: {uid}) থেকে:\n{text}"
+            )
+        except Exception:
+            pass
+    await query.edit_message_text(t(uid, "request_sent"))
 
 # ---------- টাইটেল সিলেক্ট করলে কোয়ালিটি দেখানো ----------
 async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -293,10 +340,7 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(q, callback_data=f"get::{title}::{q}")]
         for q in qualities.keys()
     ]
-    await query.edit_message_text(
-        f"{title}\n{t(uid, 'select_quality')}",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    await query.edit_message_text(f"{title}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons))
 
 # ---------- কোয়ালিটি সিলেক্ট করলে ডাউনলোড লিংক পাঠানো ----------
 async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -348,6 +392,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
+    application.add_handler(CallbackQueryHandler(paginate, pattern=r"^page::"))
+    application.add_handler(CallbackQueryHandler(request_title, pattern=r"^request$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
     return application
 
