@@ -4,6 +4,7 @@ import logging
 import asyncio
 import difflib
 import re
+import random
 from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -64,7 +65,7 @@ db = load_state("content", DB_FILE, {})            # { "title": { "quality": "li
 user_lang = load_state("languages", LANG_FILE, {})  # { "user_id": "lang_code" }
 title_meta = load_state("meta", META_FILE, {})      # { "title": {"added_at": iso_string} }
 known_users = set(load_state("users", USERS_FILE, []))
-bot_settings = load_state("settings", SETTINGS_FILE, {})   # { "loading_file_id": ..., "loading_type": "sticker"|"animation" }
+bot_settings = load_state("settings", SETTINGS_FILE, {})   # { "loading_animations": [{"file_id":..., "type": "sticker"|"animation"}, ...] }
 
 # শুধু এই সেশনে চালু থাকা, রিস্টার্টে মুছে যাওয়া অস্থায়ী ডাটা
 last_search_results = {}   # user_id -> [title, ...]  (পেজিনেশনের জন্য)
@@ -869,28 +870,30 @@ async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------- সার্চ ----------
 async def capture_loading_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """অ্যাডমিন যদি কোনো স্টিকার বা GIF/অ্যানিমেশন সরাসরি বটকে পাঠায়,
-    সেটাকেই সার্চ করার সময় 'লোডিং' অ্যানিমেশন হিসেবে সেভ করে রাখে।"""
+    সেটা 'লোডিং' অ্যানিমেশনের লিস্টে যোগ হয়ে যায় — একাধিক পাঠালে প্রতিবার সার্চে
+    এলোমেলোভাবে একটা বেছে দেখানো হবে, যাতে সবসময় একই অ্যানিমেশন না দেখায়।"""
     if update.effective_user.id != ADMIN_ID:
         return
     uid = update.effective_user.id
     msg = update.message
 
     if msg.sticker:
-        bot_settings["loading_file_id"] = msg.sticker.file_id
-        bot_settings["loading_type"] = "sticker"
+        entry = {"file_id": msg.sticker.file_id, "type": "sticker"}
     elif msg.animation:
-        bot_settings["loading_file_id"] = msg.animation.file_id
-        bot_settings["loading_type"] = "animation"
+        entry = {"file_id": msg.animation.file_id, "type": "animation"}
     else:
         return
 
+    bot_settings.setdefault("loading_animations", []).append(entry)
     save_state("settings", SETTINGS_FILE, bot_settings)
-    await update.message.reply_text(t(uid, "admin_loading_set"))
+    count = len(bot_settings["loading_animations"])
+    await update.message.reply_text(f"{t(uid, 'admin_loading_set')} ({count})")
 
 async def remove_loading_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     uid = update.effective_user.id
+    bot_settings["loading_animations"] = []
     bot_settings.pop("loading_file_id", None)
     bot_settings.pop("loading_type", None)
     save_state("settings", SETTINGS_FILE, bot_settings)
@@ -904,13 +907,14 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(uid)
 
     loading_msg = None
-    loading_file_id = bot_settings.get("loading_file_id")
-    if loading_file_id:
+    loading_list = bot_settings.get("loading_animations") or []
+    if loading_list:
+        choice = random.choice(loading_list)
         try:
-            if bot_settings.get("loading_type") == "animation":
-                loading_msg = await context.bot.send_animation(chat_id=uid, animation=loading_file_id)
+            if choice.get("type") == "animation":
+                loading_msg = await context.bot.send_animation(chat_id=uid, animation=choice["file_id"])
             else:
-                loading_msg = await context.bot.send_sticker(chat_id=uid, sticker=loading_file_id)
+                loading_msg = await context.bot.send_sticker(chat_id=uid, sticker=choice["file_id"])
             await asyncio.sleep(1.2)
         except Exception:
             loading_msg = None
