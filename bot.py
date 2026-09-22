@@ -563,6 +563,70 @@ async def add_movie_in_series(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"{t(uid, 'quality_label')} {quality}"
     )
 
+async def rename_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """টাইটেলের নাম বা টাইটেলের ভেতরের কোনো লেবেল/সিজনের নাম বদলে দেয়, ডেটা ঠিক একই জায়গায় রেখে।"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    text = update.message.text or ""
+    parts = text.split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(
+            f"{t(uid, 'admin_format_error')}\n"
+            "/rename Title | New Title\n"
+            "or (to rename a label/season inside a title):\n"
+            "/rename Title | Old Label | New Label"
+        )
+        return
+
+    segments = [s.strip() for s in parts[1].split("|")]
+
+    if len(segments) == 2 and all(segments):
+        title, new_title = segments
+        matched = find_existing_title(title)
+        if matched not in db:
+            await update.message.reply_text(t(uid, "admin_not_found"))
+            return
+        clashing = find_existing_title(new_title)
+        if clashing in db and clashing != matched:
+            await update.message.reply_text(t(uid, "admin_conflict"))
+            return
+
+        node = db.pop(matched)
+        db[new_title] = node
+        save_state("content", DB_FILE, db)
+
+        if matched in title_meta:
+            meta = title_meta.pop(matched)
+            title_meta[new_title] = meta
+            save_state("meta", META_FILE, title_meta)
+
+        await update.message.reply_text(f"{t(uid, 'admin_fixed')}\n{matched} → {new_title}")
+
+    elif len(segments) == 3 and all(segments):
+        title, old_label, new_label = segments
+        matched = find_existing_title(title)
+        if matched not in db or old_label not in db[matched]:
+            await update.message.reply_text(t(uid, "admin_not_found"))
+            return
+        if new_label in db[matched] and new_label != old_label:
+            await update.message.reply_text(t(uid, "admin_conflict"))
+            return
+
+        node_data = db[matched].pop(old_label)
+        db[matched][new_label] = node_data
+        save_state("content", DB_FILE, db)
+
+        await update.message.reply_text(f"{t(uid, 'admin_fixed')}\n{matched} / {old_label} → {new_label}")
+
+    else:
+        await update.message.reply_text(
+            f"{t(uid, 'admin_format_error')}\n"
+            "/rename Title | New Title\n"
+            "or:\n"
+            "/rename Title | Old Label | New Label"
+        )
+
 async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -1028,6 +1092,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
     application.add_handler(CommandHandler("addmovie", add_movie_in_series))
+    application.add_handler(CommandHandler("rename", rename_content))
     application.add_handler(CommandHandler("migrate", migrate_content))
     application.add_handler(CommandHandler("moveepisode", move_episode))
     application.add_handler(CommandHandler("removeepisode", remove_episode))
