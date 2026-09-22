@@ -100,6 +100,30 @@ TEXTS = {
         "request_sent": "Your request has been sent to the admin.",
         "thank_you": "Thank you for using the bot! Enjoy watching.",
         "select_option": "Select:",
+        "admin_added": "Added ✅",
+        "admin_deleted": "Deleted ✅",
+        "admin_migrated": "Migrated ✅",
+        "admin_fixed": "Fixed ✅",
+        "admin_format_error": "Wrong format. Use:",
+        "admin_not_found": "Not found. Check with /list.",
+        "admin_already_series": "This is already in series format — no need to migrate.",
+        "admin_conflict": "There's a conflicting entry here — fix that first.",
+        "title_label": "Title:",
+        "season_label": "Season:",
+        "episode_label": "Episode:",
+        "quality_label": "Quality:",
+        "admin_no_titles": "No titles added yet.",
+        "admin_total_titles": "Total titles:",
+        "admin_more": "...and {n} more",
+        "admin_stats_header": "📊 Stats",
+        "admin_stats_titles": "Titles:",
+        "admin_stats_links": "Total links:",
+        "admin_stats_users": "Users:",
+        "admin_broadcast_sent": "Sent ✅",
+        "admin_broadcast_success": "Success:",
+        "admin_broadcast_failed": "Failed:",
+        "admin_new_request": "🔔 New request from",
+        "back_button": "◀️ Back",
     },
     "hi": {
         "choose_language": "अपनी भाषा चुनें:",
@@ -115,6 +139,30 @@ TEXTS = {
         "request_sent": "आपका अनुरोध एडमिन को भेज दिया गया है।",
         "thank_you": "बॉट इस्तेमाल करने के लिए धन्यवाद! देखने का आनंद लें।",
         "select_option": "चुनें:",
+        "admin_added": "जोड़ दिया गया ✅",
+        "admin_deleted": "हटा दिया गया ✅",
+        "admin_migrated": "माइग्रेट हो गया ✅",
+        "admin_fixed": "ठीक कर दिया गया ✅",
+        "admin_format_error": "फॉर्मेट गलत है। इस तरह लिखें:",
+        "admin_not_found": "नहीं मिला। /list से जांचें।",
+        "admin_already_series": "यह पहले से ही सीरीज़ फॉर्मेट में है — माइग्रेट करने की ज़रूरत नहीं।",
+        "admin_conflict": "यहाँ पहले से एक टकराव वाली एंट्री है — पहले उसे ठीक करें।",
+        "title_label": "टाइटल:",
+        "season_label": "सीज़न:",
+        "episode_label": "एपिसोड:",
+        "quality_label": "क्वालिटी:",
+        "admin_no_titles": "अभी तक कोई टाइटल नहीं जोड़ा गया।",
+        "admin_total_titles": "कुल टाइटल:",
+        "admin_more": "...और {n} और हैं",
+        "admin_stats_header": "📊 आँकड़े",
+        "admin_stats_titles": "टाइटल:",
+        "admin_stats_links": "कुल लिंक:",
+        "admin_stats_users": "यूज़र:",
+        "admin_broadcast_sent": "भेज दिया गया ✅",
+        "admin_broadcast_success": "सफल:",
+        "admin_broadcast_failed": "असफल:",
+        "admin_new_request": "🔔 नया अनुरोध",
+        "back_button": "◀️ पीछे",
     },
     "bn": {
         "choose_language": "আপনার ভাষা নির্বাচন করুন:",
@@ -130,6 +178,30 @@ TEXTS = {
         "request_sent": "তোমার রিকোয়েস্ট অ্যাডমিনের কাছে পাঠানো হয়েছে।",
         "thank_you": "বট ব্যবহার করার জন্য ধন্যবাদ! উপভোগ করো।",
         "select_option": "সিলেক্ট করো:",
+        "admin_added": "যোগ হয়েছে ✅",
+        "admin_deleted": "ডিলিট হয়েছে ✅",
+        "admin_migrated": "মাইগ্রেট হয়েছে ✅",
+        "admin_fixed": "ঠিক করা হয়েছে ✅",
+        "admin_format_error": "ফরম্যাট ভুল। এভাবে লিখো:",
+        "admin_not_found": "পাওয়া যায়নি। /list দিয়ে চেক করো।",
+        "admin_already_series": "এটা এমনিতেই সিরিজ ফরম্যাটে আছে — মাইগ্রেট করার দরকার নেই।",
+        "admin_conflict": "এখানে আগে থেকেই একটা সাংঘর্ষিক এন্ট্রি আছে — আগে সেটা ঠিক করো।",
+        "title_label": "টাইটেল:",
+        "season_label": "সিজন:",
+        "episode_label": "এপিসোড:",
+        "quality_label": "কোয়ালিটি:",
+        "admin_no_titles": "এখনো কোনো টাইটেল যোগ করা হয়নি।",
+        "admin_total_titles": "মোট টাইটেল:",
+        "admin_more": "... আরও {n}টা আছে",
+        "admin_stats_header": "📊 পরিসংখ্যান",
+        "admin_stats_titles": "টাইটেল:",
+        "admin_stats_links": "মোট লিংক:",
+        "admin_stats_users": "ইউজার:",
+        "admin_broadcast_sent": "পাঠানো হয়েছে ✅",
+        "admin_broadcast_success": "সফল:",
+        "admin_broadcast_failed": "ব্যর্থ:",
+        "admin_new_request": "🔔 নতুন রিকোয়েস্ট",
+        "back_button": "◀️ পেছনে",
     },
     "ta": {
         "choose_language": "உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
@@ -145,6 +217,30 @@ TEXTS = {
         "request_sent": "உங்கள் கோரிக்கை நிர்வாகிக்கு அனுப்பப்பட்டது.",
         "thank_you": "பாட்டைப் பயன்படுத்தியதற்கு நன்றி! பார்த்து மகிழுங்கள்.",
         "select_option": "தேர்ந்தெடுக்கவும்:",
+        "admin_added": "சேர்க்கப்பட்டது ✅",
+        "admin_deleted": "நீக்கப்பட்டது ✅",
+        "admin_migrated": "மாற்றப்பட்டது ✅",
+        "admin_fixed": "சரி செய்யப்பட்டது ✅",
+        "admin_format_error": "தவறான வடிவம். இப்படி எழுதவும்:",
+        "admin_not_found": "கிடைக்கவில்லை. /list மூலம் சரிபார்க்கவும்.",
+        "admin_already_series": "இது ஏற்கனவே சீரிஸ் வடிவத்தில் உள்ளது — மாற்ற வேண்டியதில்லை.",
+        "admin_conflict": "இங்கே ஏற்கனவே முரண்பாடான உள்ளீடு உள்ளது — முதலில் அதைச் சரிசெய்யவும்.",
+        "title_label": "தலைப்பு:",
+        "season_label": "சீசன்:",
+        "episode_label": "எபிசோட்:",
+        "quality_label": "தரம்:",
+        "admin_no_titles": "இதுவரை எந்த தலைப்பும் சேர்க்கப்படவில்லை.",
+        "admin_total_titles": "மொத்த தலைப்புகள்:",
+        "admin_more": "...மேலும் {n}",
+        "admin_stats_header": "📊 புள்ளிவிவரங்கள்",
+        "admin_stats_titles": "தலைப்புகள்:",
+        "admin_stats_links": "மொத்த இணைப்புகள்:",
+        "admin_stats_users": "பயனர்கள்:",
+        "admin_broadcast_sent": "அனுப்பப்பட்டது ✅",
+        "admin_broadcast_success": "வெற்றி:",
+        "admin_broadcast_failed": "தோல்வி:",
+        "admin_new_request": "🔔 புதிய கோரிக்கை",
+        "back_button": "◀️ பின்",
     },
     "te": {
         "choose_language": "మీ భాషను ఎంచుకోండి:",
@@ -160,6 +256,30 @@ TEXTS = {
         "request_sent": "మీ అభ్యర్థన అడ్మిన్‌కు పంపబడింది.",
         "thank_you": "బాట్ ఉపయోగించినందుకు ధన్యవాదాలు! ఆనందించండి.",
         "select_option": "ఎంచుకోండి:",
+        "admin_added": "జోడించబడింది ✅",
+        "admin_deleted": "తొలగించబడింది ✅",
+        "admin_migrated": "మైగ్రేట్ చేయబడింది ✅",
+        "admin_fixed": "సరిచేయబడింది ✅",
+        "admin_format_error": "ఫార్మాట్ తప్పు. ఇలా టైప్ చేయండి:",
+        "admin_not_found": "కనుగొనబడలేదు. /list తో చెక్ చేయండి.",
+        "admin_already_series": "ఇది ఇప్పటికే సిరీస్ ఫార్మాట్‌లో ఉంది — మైగ్రేట్ చేయాల్సిన అవసరం లేదు.",
+        "admin_conflict": "ఇక్కడ ఇప్పటికే ఘర్షణ ఉన్న ఎంట్రీ ఉంది — ముందు దాన్ని సరిచేయండి.",
+        "title_label": "టైటిల్:",
+        "season_label": "సీజన్:",
+        "episode_label": "ఎపిసోడ్:",
+        "quality_label": "క్వాలిటీ:",
+        "admin_no_titles": "ఇంకా ఏ టైటిల్ జోడించబడలేదు.",
+        "admin_total_titles": "మొత్తం టైటిల్స్:",
+        "admin_more": "...మరో {n}",
+        "admin_stats_header": "📊 గణాంకాలు",
+        "admin_stats_titles": "టైటిల్స్:",
+        "admin_stats_links": "మొత్తం లింక్‌లు:",
+        "admin_stats_users": "యూజర్లు:",
+        "admin_broadcast_sent": "పంపబడింది ✅",
+        "admin_broadcast_success": "విజయవంతం:",
+        "admin_broadcast_failed": "విఫలం:",
+        "admin_new_request": "🔔 కొత్త అభ్యర్థన",
+        "back_button": "◀️ వెనక్కి",
     },
     "mr": {
         "choose_language": "तुमची भाषा निवडा:",
@@ -175,6 +295,30 @@ TEXTS = {
         "request_sent": "तुमची विनंती अॅडमिनला पाठवली आहे.",
         "thank_you": "बॉट वापरल्याबद्दल धन्यवाद! आनंद घ्या.",
         "select_option": "निवडा:",
+        "admin_added": "जोडले गेले ✅",
+        "admin_deleted": "हटवले गेले ✅",
+        "admin_migrated": "माइग्रेट केले गेले ✅",
+        "admin_fixed": "दुरुस्त केले गेले ✅",
+        "admin_format_error": "फॉरमॅट चुकीचा आहे. असे लिहा:",
+        "admin_not_found": "सापडले नाही. /list ने तपासा.",
+        "admin_already_series": "हे आधीच सीरिज फॉरमॅटमध्ये आहे — माइग्रेट करण्याची गरज नाही.",
+        "admin_conflict": "इथे आधीच एक विरोधाभासी नोंद आहे — आधी ती दुरुस्त करा.",
+        "title_label": "शीर्षक:",
+        "season_label": "सीझन:",
+        "episode_label": "भाग:",
+        "quality_label": "गुणवत्ता:",
+        "admin_no_titles": "अजून कोणतेही शीर्षक जोडलेले नाही.",
+        "admin_total_titles": "एकूण शीर्षके:",
+        "admin_more": "...आणखी {n}",
+        "admin_stats_header": "📊 आकडेवारी",
+        "admin_stats_titles": "शीर्षके:",
+        "admin_stats_links": "एकूण लिंक्स:",
+        "admin_stats_users": "युजर्स:",
+        "admin_broadcast_sent": "पाठवले गेले ✅",
+        "admin_broadcast_success": "यशस्वी:",
+        "admin_broadcast_failed": "अयशस्वी:",
+        "admin_new_request": "🔔 नवीन विनंती",
+        "back_button": "◀️ मागे",
     },
     "gu": {
         "choose_language": "તમારી ભાષા પસંદ કરો:",
@@ -190,6 +334,30 @@ TEXTS = {
         "request_sent": "તમારી વિનંતી એડમિનને મોકલવામાં આવી છે.",
         "thank_you": "બોટ વાપરવા બદલ આભાર! માણો.",
         "select_option": "પસંદ કરો:",
+        "admin_added": "ઉમેરવામાં આવ્યું ✅",
+        "admin_deleted": "ડિલીટ કરવામાં આવ્યું ✅",
+        "admin_migrated": "માઇગ્રેટ કરવામાં આવ્યું ✅",
+        "admin_fixed": "ઠીક કરવામાં આવ્યું ✅",
+        "admin_format_error": "ફોર્મેટ ખોટું છે. આ રીતે લખો:",
+        "admin_not_found": "મળ્યું નથી. /list થી ચેક કરો.",
+        "admin_already_series": "આ પહેલેથી જ સિરીઝ ફોર્મેટમાં છે — માઇગ્રેટ કરવાની જરૂર નથી.",
+        "admin_conflict": "અહીં પહેલેથી જ વિરોધાભાસી એન્ટ્રી છે — પહેલા તેને ઠીક કરો.",
+        "title_label": "ટાઈટલ:",
+        "season_label": "સીઝન:",
+        "episode_label": "એપિસોડ:",
+        "quality_label": "ક્વોલિટી:",
+        "admin_no_titles": "હજુ સુધી કોઈ ટાઈટલ ઉમેરવામાં આવ્યું નથી.",
+        "admin_total_titles": "કુલ ટાઈટલ:",
+        "admin_more": "...બીજા {n}",
+        "admin_stats_header": "📊 આંકડા",
+        "admin_stats_titles": "ટાઈટલ:",
+        "admin_stats_links": "કુલ લિંક:",
+        "admin_stats_users": "યુઝર્સ:",
+        "admin_broadcast_sent": "મોકલવામાં આવ્યું ✅",
+        "admin_broadcast_success": "સફળ:",
+        "admin_broadcast_failed": "નિષ્ફળ:",
+        "admin_new_request": "🔔 નવી વિનંતી",
+        "back_button": "◀️ પાછળ",
     },
 }
 
@@ -281,18 +449,19 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text or ""
+    uid = update.effective_user.id
     parts = text.split(" ", 1)
     if len(parts) < 2 or "|" not in parts[1]:
         await update.message.reply_text(
-            "ফরম্যাট ভুল। এভাবে লিখো:\n"
-            "/add টাইটেল | কোয়ালিটি | লিংক\n"
-            "উদাহরণ: /add Amar Movie | 720 | https://terabox.com/xyz"
+            f"{t(uid, 'admin_format_error')}\n"
+            "/add Title | Quality | Link\n"
+            "Example: /add Amar Movie | 720 | https://terabox.com/xyz"
         )
         return
 
     segments = [s.strip() for s in parts[1].split("|")]
     if len(segments) != 3 or not all(segments):
-        await update.message.reply_text("ফরম্যাট ভুল। এভাবে লিখো:\n/add টাইটেল | কোয়ালিটি | লিংক")
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/add Title | Quality | Link")
         return
 
     title, quality, link = segments
@@ -303,27 +472,30 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title_meta.setdefault(existing_title, {})["added_at"] = datetime.now(timezone.utc).isoformat()
     save_state("meta", META_FILE, title_meta)
 
-    await update.message.reply_text(f"যোগ হয়েছে ✅\nটাইটেল: {existing_title}\nকোয়ালিটি: {quality}")
+    await update.message.reply_text(
+        f"{t(uid, 'admin_added')}\n{t(uid, 'title_label')} {existing_title}\n{t(uid, 'quality_label')} {quality}"
+    )
 
 async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     text = update.message.text or ""
+    uid = update.effective_user.id
     parts = text.split(" ", 1)
     if len(parts) < 2 or "|" not in parts[1]:
         await update.message.reply_text(
-            "ফরম্যাট ভুল। এভাবে লিখো:\n"
-            "/addseries টাইটেল | সিজন | এপিসোড | কোয়ালিটি | লিংক\n"
-            "উদাহরণ: /addseries Money Heist | Season 1 | Episode 1 | 720 | https://drive.google.com/xyz"
+            f"{t(uid, 'admin_format_error')}\n"
+            "/addseries Title | Season | Episode | Quality | Link\n"
+            "Example: /addseries Money Heist | Season 1 | Episode 1 | 720 | https://drive.google.com/xyz"
         )
         return
 
     segments = [s.strip() for s in parts[1].split("|")]
     if len(segments) != 5 or not all(segments):
         await update.message.reply_text(
-            "ফরম্যাট ভুল। এভাবে লিখো:\n"
-            "/addseries টাইটেল | সিজন | এপিসোড | কোয়ালিটি | লিংক"
+            f"{t(uid, 'admin_format_error')}\n"
+            "/addseries Title | Season | Episode | Quality | Link"
         )
         return
 
@@ -339,7 +511,11 @@ async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
     save_state("meta", META_FILE, title_meta)
 
     await update.message.reply_text(
-        f"যোগ হয়েছে ✅\nটাইটেল: {existing_title}\nসিজন: {season}\nএপিসোড: {episode}\nকোয়ালিটি: {quality}"
+        f"{t(uid, 'admin_added')}\n"
+        f"{t(uid, 'title_label')} {existing_title}\n"
+        f"{t(uid, 'season_label')} {season}\n"
+        f"{t(uid, 'episode_label')} {episode}\n"
+        f"{t(uid, 'quality_label')} {quality}"
     )
 
 async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -347,10 +523,11 @@ async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text or ""
+    uid = update.effective_user.id
     parts = text.split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
         await update.message.reply_text(
-            "পুরনো টাইটেলটা হুবহু বসিয়ে দাও, যেমন তুমি /add-এ লিখেছিলে:\n"
+            "Paste the old title exactly as you used in /add:\n"
             "/migrate Daredevil Hindi SO2 EO1"
         )
         return
@@ -362,8 +539,8 @@ async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         segments = [s.strip() for s in raw.split("|")]
         if len(segments) != 4 or not all(segments):
             await update.message.reply_text(
-                "ফরম্যাট ভুল। এভাবে লিখো:\n"
-                "/migrate পুরনো টাইটেল | নতুন টাইটেল | সিজন | এপিসোড"
+                f"{t(uid, 'admin_format_error')}\n"
+                "/migrate Old Title | New Title | Season | Episode"
             )
             return
         old_title, new_title, season_label, episode_label = segments
@@ -374,9 +551,9 @@ async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         episode_match = re.search(r"\bEO\s*(\d+)\b", old_title, re.IGNORECASE)
         if not season_match or not episode_match:
             await update.message.reply_text(
-                "টাইটেলে SO আর EO প্যাটার্ন (যেমন SO2, EO1) খুঁজে পাইনি।\n"
-                "ম্যানুয়ালি লিখতে চাইলে এভাবে লেখো:\n"
-                "/migrate পুরনো টাইটেল | নতুন টাইটেল | সিজন | এপিসোড"
+                "Couldn't find an SO/EO pattern (e.g. SO2, EO1) in that title.\n"
+                "To do it manually, use:\n"
+                "/migrate Old Title | New Title | Season | Episode"
             )
             return
         season_label = f"Season {season_match.group(1)}"
@@ -386,24 +563,24 @@ async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     matched_old = find_existing_title(old_title)
     if matched_old not in db:
-        await update.message.reply_text("পুরনো টাইটেলটা পাওয়া যায়নি। /list দিয়ে সঠিক নামটা কপি করে আবার চেষ্টা করো।")
+        await update.message.reply_text(t(uid, "admin_not_found"))
         return
 
     old_node = db[matched_old]
     if not is_leaf_level(old_node):
-        await update.message.reply_text("এই টাইটেলটা এমনিতেই সিরিজ ফরম্যাটে আছে, মাইগ্রেট করার দরকার নেই।")
+        await update.message.reply_text(t(uid, "admin_already_series"))
         return
 
     new_existing_title = find_existing_title(new_title)
     existing_new_node = db.get(new_existing_title, {})
     if existing_new_node and is_leaf_level(existing_new_node):
-        await update.message.reply_text("নতুন টাইটেলে আগে থেকেই ফ্ল্যাট (নন-সিরিজ) এন্ট্রি আছে — আগে সেটা /remove করে নাও।")
+        await update.message.reply_text(t(uid, "admin_conflict"))
         return
 
     db.setdefault(new_existing_title, {})
     db[new_existing_title].setdefault(season_label, {})
     if db[new_existing_title][season_label] and is_leaf_level(db[new_existing_title][season_label]):
-        await update.message.reply_text("এই সিজনের নিচে আগে থেকেই ফ্ল্যাট এন্ট্রি আছে, ম্যানুয়ালি চেক করে নাও।")
+        await update.message.reply_text(t(uid, "admin_conflict"))
         return
     db[new_existing_title][season_label][episode_label] = old_node
 
@@ -417,83 +594,29 @@ async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("meta", META_FILE, title_meta)
 
     await update.message.reply_text(
-        f"মাইগ্রেট হয়েছে ✅\n{matched_old} → {new_existing_title} / {season_label} / {episode_label}\n"
-        f"({len(old_node)}টা কোয়ালিটি নিয়ে যাওয়া হয়েছে)"
-    )
-
-async def fix_season(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    parts = (update.message.text or "").split(" ", 1)
-    if len(parts) < 2 or "|" not in parts[1]:
-        await update.message.reply_text(
-            "এভাবে লিখো:\n"
-            "/fixseason টাইটেল | ভুল সিজন | এপিসোড | সঠিক সিজন\n"
-            "উদাহরণ: /fixseason Daredevil Hindi | Season 2 | Episode 1 | Season 1"
-        )
-        return
-
-    segments = [s.strip() for s in parts[1].split("|")]
-    if len(segments) != 4 or not all(segments):
-        await update.message.reply_text(
-            "ফরম্যাট ভুল। এভাবে লিখো:\n"
-            "/fixseason টাইটেল | ভুল সিজন | এপিসোড | সঠিক সিজন"
-        )
-        return
-
-    title, wrong_season, episode, correct_season = segments
-    matched_title = find_existing_title(title)
-
-    if matched_title not in db or is_leaf_level(db[matched_title]):
-        await update.message.reply_text("এই টাইটেলে সিজন-স্ট্রাকচার পাওয়া যায়নি। /list দিয়ে সঠিক নামটা চেক করো।")
-        return
-
-    node = db[matched_title]
-    if wrong_season not in node:
-        await update.message.reply_text(f"'{wrong_season}' নামে কোনো সিজন পাওয়া যায়নি '{matched_title}'-এ।")
-        return
-
-    season_node = node[wrong_season]
-    if episode not in season_node:
-        await update.message.reply_text(f"'{episode}' নামে কোনো এপিসোড পাওয়া যায়নি '{wrong_season}'-এ।")
-        return
-
-    episode_data = season_node.pop(episode)
-    if not season_node:
-        del node[wrong_season]
-
-    node.setdefault(correct_season, {})
-    if node[correct_season] and is_leaf_level(node[correct_season]):
-        node.setdefault(wrong_season, {})[episode] = episode_data
-        await update.message.reply_text("সঠিক সিজনের জায়গায় আগে থেকেই ফ্ল্যাট এন্ট্রি আছে, কিছু বদলানো হয়নি।")
-        return
-    node[correct_season][episode] = episode_data
-
-    save_state("content", DB_FILE, db)
-    await update.message.reply_text(
-        f"ঠিক হয়ে গেছে ✅\n{matched_title} / {wrong_season} / {episode} → {matched_title} / {correct_season} / {episode}"
+        f"{t(uid, 'admin_migrated')}\n{matched_old} → {new_existing_title} / {season_label} / {episode_label}"
     )
 
 async def move_episode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
+    uid = update.effective_user.id
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or "|" not in parts[1]:
         await update.message.reply_text(
-            "এভাবে লিখো:\n/moveepisode টাইটেল | পুরনো সিজন | পুরনো এপিসোড | নতুন সিজন | নতুন এপিসোড"
+            f"{t(uid, 'admin_format_error')}\n/moveepisode Title | Old Season | Old Episode | New Season | New Episode"
         )
         return
     segments = [s.strip() for s in parts[1].split("|")]
     if len(segments) != 5 or not all(segments):
         await update.message.reply_text(
-            "ফরম্যাট ভুল। এভাবে লিখো:\n/moveepisode টাইটেল | পুরনো সিজন | পুরনো এপিসোড | নতুন সিজন | নতুন এপিসোড"
+            f"{t(uid, 'admin_format_error')}\n/moveepisode Title | Old Season | Old Episode | New Season | New Episode"
         )
         return
     title, old_season, old_episode, new_season, new_episode = segments
     matched_title = find_existing_title(title)
     if matched_title not in db or old_season not in db[matched_title] or old_episode not in db[matched_title][old_season]:
-        await update.message.reply_text("এই সিজন/এপিসোড পাওয়া যায়নি। /list দিয়ে টাইটেলটা চেক করো।")
+        await update.message.reply_text(t(uid, "admin_not_found"))
         return
 
     node = db[matched_title]
@@ -505,26 +628,25 @@ async def move_episode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("content", DB_FILE, db)
 
     await update.message.reply_text(
-        f"ঠিক করা হয়েছে ✅\n{matched_title} / {old_season} / {old_episode}  →  {matched_title} / {new_season} / {new_episode}"
+        f"{t(uid, 'admin_fixed')}\n{matched_title} / {old_season} / {old_episode}  →  {matched_title} / {new_season} / {new_episode}"
     )
 
 async def remove_episode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
+    uid = update.effective_user.id
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or "|" not in parts[1]:
-        await update.message.reply_text(
-            "এভাবে লিখো:\n/removeepisode টাইটেল | সিজন | এপিসোড"
-        )
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removeepisode Title | Season | Episode")
         return
     segments = [s.strip() for s in parts[1].split("|")]
     if len(segments) != 3 or not all(segments):
-        await update.message.reply_text("ফরম্যাট ভুল। এভাবে লিখো:\n/removeepisode টাইটেল | সিজন | এপিসোড")
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removeepisode Title | Season | Episode")
         return
     title, season, episode = segments
     matched_title = find_existing_title(title)
     if matched_title not in db or season not in db[matched_title] or episode not in db[matched_title][season]:
-        await update.message.reply_text("এই সিজন/এপিসোড পাওয়া যায়নি। /list দিয়ে চেক করো।")
+        await update.message.reply_text(t(uid, "admin_not_found"))
         return
 
     del db[matched_title][season][episode]
@@ -532,15 +654,16 @@ async def remove_episode(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del db[matched_title][season]
     save_state("content", DB_FILE, db)
 
-    await update.message.reply_text(f"ডিলিট হয়েছে ✅: {matched_title} / {season} / {episode}")
+    await update.message.reply_text(f"{t(uid, 'admin_deleted')}: {matched_title} / {season} / {episode}")
 
 async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
+    uid = update.effective_user.id
 
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
-        await update.message.reply_text("এভাবে লিখো:\n/remove টাইটেল")
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/remove Title")
         return
 
     title = parts[1].strip()
@@ -550,39 +673,45 @@ async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if title in title_meta:
             del title_meta[title]
             save_state("meta", META_FILE, title_meta)
-        await update.message.reply_text(f"ডিলিট হয়েছে ✅: {title}")
+        await update.message.reply_text(f"{t(uid, 'admin_deleted')}: {title}")
     else:
-        await update.message.reply_text("এই টাইটেল পাওয়া যায়নি।")
+        await update.message.reply_text(t(uid, "admin_not_found"))
 
 async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
+    uid = update.effective_user.id
     titles = list(db.keys())
     if not titles:
-        await update.message.reply_text("এখনো কোনো টাইটেল যোগ করা হয়নি।")
+        await update.message.reply_text(t(uid, "admin_no_titles"))
         return
     shown = titles[:100]
-    text = f"মোট টাইটেল: {len(titles)}\n\n" + "\n".join(f"• {x}" for x in shown)
+    text = f"{t(uid, 'admin_total_titles')} {len(titles)}\n\n" + "\n".join(f"• {x}" for x in shown)
     if len(titles) > 100:
-        text += f"\n... আরও {len(titles) - 100}টা আছে"
+        text += "\n" + t(uid, "admin_more").format(n=len(titles) - 100)
     await update.message.reply_text(text)
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
+    uid = update.effective_user.id
     total_titles = len(db)
     total_links = sum(len(q) for q in db.values())
     total_users = len(known_users)
     await update.message.reply_text(
-        f"📊 পরিসংখ্যান\nটাইটেল: {total_titles}\nমোট লিংক: {total_links}\nইউজার: {total_users}"
+        f"{t(uid, 'admin_stats_header')}\n"
+        f"{t(uid, 'admin_stats_titles')} {total_titles}\n"
+        f"{t(uid, 'admin_stats_links')} {total_links}\n"
+        f"{t(uid, 'admin_stats_users')} {total_users}"
     )
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
+    uid = update.effective_user.id
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
-        await update.message.reply_text("এভাবে লিখো:\n/broadcast তোমার মেসেজ")
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/broadcast Your message")
         return
     message = parts[1].strip()
     sent, failed = 0, 0
@@ -592,7 +721,11 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sent += 1
         except Exception:
             failed += 1
-    await update.message.reply_text(f"পাঠানো হয়েছে ✅\nসফল: {sent}\nব্যর্থ: {failed}")
+    await update.message.reply_text(
+        f"{t(uid, 'admin_broadcast_sent')}\n"
+        f"{t(uid, 'admin_broadcast_success')} {sent}\n"
+        f"{t(uid, 'admin_broadcast_failed')} {failed}"
+    )
 
 async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -647,7 +780,7 @@ async def request_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"🔔 নতুন রিকোয়েস্ট @{username} (id: {uid}) থেকে:\n{text}"
+                text=f"{t(ADMIN_ID, 'admin_new_request')} @{username} (id: {uid}):\n{text}"
             )
         except Exception:
             pass
@@ -672,7 +805,7 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(q, callback_data=f"get::{title}::{q}")]
             for q in node.keys()
         ]
-        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
+        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
             f"{title}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
@@ -683,7 +816,7 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
             for i, k in enumerate(node.keys())
         ]
-        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
+        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
             f"{title}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
@@ -718,7 +851,7 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
             for i, q in enumerate(node.keys())
         ]
-        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
+        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
             f"{label}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
@@ -728,7 +861,7 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
             for i, k in enumerate(node.keys())
         ]
-        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
+        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
             f"{label}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
@@ -758,7 +891,7 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(node.keys())]
             option_key = "select_option"
-        buttons.append([InlineKeyboardButton("◀️ Back", callback_data="navback")])
+        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
 
         await query.edit_message_text(
             f"{label}\n{t(uid, option_key)}", reply_markup=InlineKeyboardMarkup(buttons)
