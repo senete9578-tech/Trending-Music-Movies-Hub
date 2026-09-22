@@ -67,6 +67,22 @@ title_meta = load_state("meta", META_FILE, {})      # { "title": {"added_at": is
 known_users = set(load_state("users", USERS_FILE, []))
 bot_settings = load_state("settings", SETTINGS_FILE, {})   # { "loading_animations": [{"file_id":..., "type": "sticker"|"animation"}, ...] }
 
+# ---------- লোডিং/প্রসেসিং টেক্সট-অ্যানিমেশন (একটা মেসেজ নিজেই বদলে বদলে দেখায়, ChatGPT/DeepSeek-স্টাইল) ----------
+LOADING_FRAME_SETS = [
+    [
+        "⚡ *প্রসেসিং শুরু হচ্ছে...*",
+        "⚡⚡ *বজ্রপাতের গতিতে ডেটা প্রসেস হচ্ছে...* 🔥",
+        "🔥⚡ *ফলাফল তৈরি হচ্ছে...* ⚡🔥",
+        "💥⚡ *চূড়ান্ত রূপ দেওয়া হচ্ছে...* 🔥",
+    ],
+    [
+        "🔍 *খোঁজা হচ্ছে...*",
+        "✨🔍 *মিলিয়ে দেখা হচ্ছে...* ✨",
+        "🌟 *প্রায় হয়ে গেছে...* 🌟",
+        "🎬 *রেজাল্ট সাজানো হচ্ছে...* 🎬",
+    ],
+]
+
 # শুধু এই সেশনে চালু থাকা, রিস্টার্টে মুছে যাওয়া অস্থায়ী ডাটা
 last_search_results = {}   # user_id -> [title, ...]  (পেজিনেশনের জন্য)
 pending_request = {}       # user_id -> query text     (রিকোয়েস্ট বাটনের জন্য)
@@ -906,39 +922,31 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     register_user(uid)
 
-    loading_msg = None
-    loading_list = bot_settings.get("loading_animations") or []
-    if loading_list:
-        choice = random.choice(loading_list)
+    frames = random.choice(LOADING_FRAME_SETS)
+    sent = await update.message.reply_text(frames[0], parse_mode="Markdown")
+    for frame in frames[1:]:
         try:
-            if choice.get("type") == "animation":
-                loading_msg = await context.bot.send_animation(chat_id=uid, animation=choice["file_id"])
-            else:
-                loading_msg = await context.bot.send_sticker(chat_id=uid, sticker=choice["file_id"])
-            await asyncio.sleep(1.2)
+            await asyncio.sleep(0.5)
+            await sent.edit_text(frame, parse_mode="Markdown")
         except Exception:
-            loading_msg = None
+            pass
 
     matches = fuzzy_search(raw_query, db.keys())
 
     if not matches:
         pending_request[uid] = raw_query
         buttons = [[InlineKeyboardButton(t(uid, "request_button"), callback_data="request")]]
-        if loading_msg:
-            try:
-                await loading_msg.delete()
-            except Exception:
-                pass
-        await update.message.reply_text(t(uid, "not_found"), reply_markup=InlineKeyboardMarkup(buttons))
+        try:
+            await sent.edit_text(t(uid, "not_found"), reply_markup=InlineKeyboardMarkup(buttons))
+        except Exception:
+            await update.message.reply_text(t(uid, "not_found"), reply_markup=InlineKeyboardMarkup(buttons))
         return
 
     last_search_results[uid] = matches
-    if loading_msg:
-        try:
-            await loading_msg.delete()
-        except Exception:
-            pass
-    await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
+    try:
+        await sent.edit_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
+    except Exception:
+        await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
 
 async def paginate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
