@@ -518,6 +518,51 @@ async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"{t(uid, 'quality_label')} {quality}"
     )
 
+async def add_movie_in_series(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """সিরিজ টাইটেলের নিচে সিজনের পাশাপাশি একটা 'একক' এন্ট্রি (যেমন মূল মুভি) যোগ করে,
+    যেটাতে ক্লিক করলে সরাসরি কোয়ালিটি দেখাবে, কোনো এপিসোড ধাপ ছাড়াই।"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    text = update.message.text or ""
+    uid = update.effective_user.id
+    parts = text.split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(
+            f"{t(uid, 'admin_format_error')}\n"
+            "/addmovie Title | Label | Quality | Link\n"
+            "Example: /addmovie Daredevil Hindi | Daredevil | 720p | https://drive.google.com/xyz"
+        )
+        return
+
+    segments = [s.strip() for s in parts[1].split("|")]
+    if len(segments) != 4 or not all(segments):
+        await update.message.reply_text(
+            f"{t(uid, 'admin_format_error')}\n"
+            "/addmovie Title | Label | Quality | Link"
+        )
+        return
+
+    title, label, quality, link = segments
+    existing_title = find_existing_title(title)
+    db.setdefault(existing_title, {})
+    db[existing_title].setdefault(label, {})
+    if db[existing_title][label] and not is_leaf_level(db[existing_title][label]):
+        await update.message.reply_text(t(uid, "admin_conflict"))
+        return
+    db[existing_title][label][quality] = link
+    save_state("content", DB_FILE, db)
+
+    title_meta.setdefault(existing_title, {})["added_at"] = datetime.now(timezone.utc).isoformat()
+    save_state("meta", META_FILE, title_meta)
+
+    await update.message.reply_text(
+        f"{t(uid, 'admin_added')}\n"
+        f"{t(uid, 'title_label')} {existing_title}\n"
+        f"{label}\n"
+        f"{t(uid, 'quality_label')} {quality}"
+    )
+
 async def migrate_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -982,6 +1027,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
+    application.add_handler(CommandHandler("addmovie", add_movie_in_series))
     application.add_handler(CommandHandler("migrate", migrate_content))
     application.add_handler(CommandHandler("moveepisode", move_episode))
     application.add_handler(CommandHandler("removeepisode", remove_episode))
