@@ -30,6 +30,7 @@ DB_FILE = "data.json"
 LANG_FILE = "lang.json"
 META_FILE = "meta.json"
 USERS_FILE = "users.json"
+SETTINGS_FILE = "settings.json"
 
 PAGE_SIZE = 10
 
@@ -63,6 +64,7 @@ db = load_state("content", DB_FILE, {})            # { "title": { "quality": "li
 user_lang = load_state("languages", LANG_FILE, {})  # { "user_id": "lang_code" }
 title_meta = load_state("meta", META_FILE, {})      # { "title": {"added_at": iso_string} }
 known_users = set(load_state("users", USERS_FILE, []))
+bot_settings = load_state("settings", SETTINGS_FILE, {})   # { "loading_file_id": ..., "loading_type": "sticker"|"animation" }
 
 # শুধু এই সেশনে চালু থাকা, রিস্টার্টে মুছে যাওয়া অস্থায়ী ডাটা
 last_search_results = {}   # user_id -> [title, ...]  (পেজিনেশনের জন্য)
@@ -124,6 +126,8 @@ TEXTS = {
         "admin_broadcast_failed": "Failed:",
         "admin_new_request": "🔔 New request from",
         "back_button": "◀️ Back",
+        "admin_loading_set": "Loading animation set ✅",
+        "admin_loading_removed": "Loading animation removed ✅",
     },
     "hi": {
         "choose_language": "अपनी भाषा चुनें:",
@@ -163,6 +167,8 @@ TEXTS = {
         "admin_broadcast_failed": "असफल:",
         "admin_new_request": "🔔 नया अनुरोध",
         "back_button": "◀️ पीछे",
+        "admin_loading_set": "लोडिंग एनिमेशन सेट हो गया ✅",
+        "admin_loading_removed": "लोडिंग एनिमेशन हटा दिया गया ✅",
     },
     "bn": {
         "choose_language": "আপনার ভাষা নির্বাচন করুন:",
@@ -202,6 +208,8 @@ TEXTS = {
         "admin_broadcast_failed": "ব্যর্থ:",
         "admin_new_request": "🔔 নতুন রিকোয়েস্ট",
         "back_button": "◀️ পেছনে",
+        "admin_loading_set": "লোডিং অ্যানিমেশন সেট হয়েছে ✅",
+        "admin_loading_removed": "লোডিং অ্যানিমেশন সরানো হয়েছে ✅",
     },
     "ta": {
         "choose_language": "உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
@@ -241,6 +249,8 @@ TEXTS = {
         "admin_broadcast_failed": "தோல்வி:",
         "admin_new_request": "🔔 புதிய கோரிக்கை",
         "back_button": "◀️ பின்",
+        "admin_loading_set": "ஏற்றல் அனிமேஷன் அமைக்கப்பட்டது ✅",
+        "admin_loading_removed": "ஏற்றல் அனிமேஷன் அகற்றப்பட்டது ✅",
     },
     "te": {
         "choose_language": "మీ భాషను ఎంచుకోండి:",
@@ -280,6 +290,8 @@ TEXTS = {
         "admin_broadcast_failed": "విఫలం:",
         "admin_new_request": "🔔 కొత్త అభ్యర్థన",
         "back_button": "◀️ వెనక్కి",
+        "admin_loading_set": "లోడింగ్ యానిమేషన్ సెట్ చేయబడింది ✅",
+        "admin_loading_removed": "లోడింగ్ యానిమేషన్ తీసివేయబడింది ✅",
     },
     "mr": {
         "choose_language": "तुमची भाषा निवडा:",
@@ -319,6 +331,8 @@ TEXTS = {
         "admin_broadcast_failed": "अयशस्वी:",
         "admin_new_request": "🔔 नवीन विनंती",
         "back_button": "◀️ मागे",
+        "admin_loading_set": "लोडिंग अॅनिमेशन सेट केले ✅",
+        "admin_loading_removed": "लोडिंग अॅनिमेशन काढले ✅",
     },
     "gu": {
         "choose_language": "તમારી ભાષા પસંદ કરો:",
@@ -358,6 +372,8 @@ TEXTS = {
         "admin_broadcast_failed": "નિષ્ફળ:",
         "admin_new_request": "🔔 નવી વિનંતી",
         "back_button": "◀️ પાછળ",
+        "admin_loading_set": "લોડિંગ એનિમેશન સેટ થયું ✅",
+        "admin_loading_removed": "લોડિંગ એનિમેશન દૂર કરવામાં આવ્યું ✅",
     },
 }
 
@@ -851,6 +867,35 @@ async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(titles_sorted, 0))
 
 # ---------- সার্চ ----------
+async def capture_loading_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """অ্যাডমিন যদি কোনো স্টিকার বা GIF/অ্যানিমেশন সরাসরি বটকে পাঠায়,
+    সেটাকেই সার্চ করার সময় 'লোডিং' অ্যানিমেশন হিসেবে সেভ করে রাখে।"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    msg = update.message
+
+    if msg.sticker:
+        bot_settings["loading_file_id"] = msg.sticker.file_id
+        bot_settings["loading_type"] = "sticker"
+    elif msg.animation:
+        bot_settings["loading_file_id"] = msg.animation.file_id
+        bot_settings["loading_type"] = "animation"
+    else:
+        return
+
+    save_state("settings", SETTINGS_FILE, bot_settings)
+    await update.message.reply_text(t(uid, "admin_loading_set"))
+
+async def remove_loading_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    bot_settings.pop("loading_file_id", None)
+    bot_settings.pop("loading_type", None)
+    save_state("settings", SETTINGS_FILE, bot_settings)
+    await update.message.reply_text(t(uid, "admin_loading_removed"))
+
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_query = update.message.text.strip()
     if not raw_query:
@@ -858,15 +903,37 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     register_user(uid)
 
+    loading_msg = None
+    loading_file_id = bot_settings.get("loading_file_id")
+    if loading_file_id:
+        try:
+            if bot_settings.get("loading_type") == "animation":
+                loading_msg = await context.bot.send_animation(chat_id=uid, animation=loading_file_id)
+            else:
+                loading_msg = await context.bot.send_sticker(chat_id=uid, sticker=loading_file_id)
+            await asyncio.sleep(1.2)
+        except Exception:
+            loading_msg = None
+
     matches = fuzzy_search(raw_query, db.keys())
 
     if not matches:
         pending_request[uid] = raw_query
         buttons = [[InlineKeyboardButton(t(uid, "request_button"), callback_data="request")]]
+        if loading_msg:
+            try:
+                await loading_msg.delete()
+            except Exception:
+                pass
         await update.message.reply_text(t(uid, "not_found"), reply_markup=InlineKeyboardMarkup(buttons))
         return
 
     last_search_results[uid] = matches
+    if loading_msg:
+        try:
+            await loading_msg.delete()
+        except Exception:
+            pass
     await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
 
 async def paginate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1101,6 +1168,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("latest", latest))
+    application.add_handler(CommandHandler("removeloading", remove_loading_animation))
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
@@ -1109,6 +1177,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(send_file_nav, pattern=r"^getnav::"))
     application.add_handler(CallbackQueryHandler(paginate, pattern=r"^page::"))
     application.add_handler(CallbackQueryHandler(request_title, pattern=r"^request$"))
+    application.add_handler(MessageHandler(filters.Sticker.ALL | filters.ANIMATION, capture_loading_animation))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
     return application
 
