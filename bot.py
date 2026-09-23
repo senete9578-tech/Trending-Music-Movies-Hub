@@ -7,7 +7,7 @@ import re
 import random
 from datetime import datetime, timezone
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
@@ -456,12 +456,30 @@ def build_results_keyboard(titles, page: int = 0):
 # ---------- /start ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user.id)
+    buttons = [[InlineKeyboardButton("Follow & Start", callback_data="begin")]]
+    await update.message.reply_text(
+        "Welcome! / स्वागत है! / স্বাগতম!",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def begin_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    buttons = [
+        [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
+        for code, name in LANGUAGES.items()
+    ]
+    await query.edit_message_text(
+        "Select your language / अपनी भाषा चुनें / আপনার ভাষা নির্বাচন করুন:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
         for code, name in LANGUAGES.items()
     ]
     await update.message.reply_text(
-        "Welcome! / स्वागत है! / স্বাগতম!\n"
         "Select your language / अपनी भाषा चुनें / আপনার ভাষা নির্বাচন করুন:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
@@ -475,6 +493,33 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texts = TEXTS[lang_code]
     await query.edit_message_text(f"{texts['language_set']}\n{texts['search_prompt']}")
+
+# ---------- রিসেট / ক্লিয়ার চ্যাট ----------
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    buttons = [[
+        InlineKeyboardButton("Yes", callback_data="reset_yes"),
+        InlineKeyboardButton("No", callback_data="reset_no"),
+    ]]
+    await update.message.reply_text(
+        "Reset chat? This clears your language and search state here. Continue?",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def reset_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+
+    if query.data == "reset_yes":
+        user_lang.pop(str(uid), None)
+        save_state("languages", LANG_FILE, user_lang)
+        last_search_results.pop(uid, None)
+        pending_request.pop(uid, None)
+        browse_state.pop(uid, None)
+        buttons = [[InlineKeyboardButton("Follow & Start", callback_data="begin")]]
+        await query.edit_message_text("Reset done.", reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await query.edit_message_text("Cancelled.")
 
 # ---------- অ্যাডমিন: লিংক যোগ করা ----------
 async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -922,31 +967,24 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     register_user(uid)
 
-    frames = random.choice(LOADING_FRAME_SETS)
-    sent = await update.message.reply_text(frames[0], parse_mode="Markdown")
-    for frame in frames[1:]:
-        try:
-            await asyncio.sleep(0.5)
-            await sent.edit_text(frame, parse_mode="Markdown")
-        except Exception:
-            pass
-
     matches = fuzzy_search(raw_query, db.keys())
 
     if not matches:
         pending_request[uid] = raw_query
-        buttons = [[InlineKeyboardButton(t(uid, "request_button"), callback_data="request")]]
+        user = update.effective_user
+        name = f"@{user.username}" if user.username else (user.full_name or str(uid))
         try:
-            await sent.edit_text(t(uid, "not_found"), reply_markup=InlineKeyboardMarkup(buttons))
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"{t(ADMIN_ID, 'admin_new_request')} {name} (id: {uid}):\n{raw_query}"
+            )
         except Exception:
-            await update.message.reply_text(t(uid, "not_found"), reply_markup=InlineKeyboardMarkup(buttons))
+            pass
+        await update.message.reply_text(t(uid, "not_found"))
         return
 
     last_search_results[uid] = matches
-    try:
-        await sent.edit_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
-    except Exception:
-        await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
+    await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
 
 async def paginate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1165,8 +1203,16 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         await application.stop()
 
 # ---------- মেইন ----------
+async def post_init(application: Application):
+    await application.bot.set_my_commands([
+        BotCommand("start", "Start"),
+        BotCommand("language", "Change language"),
+        BotCommand("reset", "Reset chat"),
+        BotCommand("latest", "Latest additions"),
+    ])
+
 def build_application() -> Application:
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
@@ -1180,7 +1226,11 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("latest", latest))
+    application.add_handler(CommandHandler("language", language_command))
+    application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(CommandHandler("removeloading", remove_loading_animation))
+    application.add_handler(CallbackQueryHandler(begin_flow, pattern=r"^begin$"))
+    application.add_handler(CallbackQueryHandler(reset_confirm, pattern=r"^reset_"))
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
