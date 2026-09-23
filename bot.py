@@ -852,6 +852,14 @@ def format_node_lines(node: dict, indent: int = 0):
             lines.append(f"{prefix}- {key}")
     return lines
 
+def count_links(node: dict) -> int:
+    """একটা টাইটেলের ভেতরের সবগুলো লিংক (কোয়ালিটি) মোট কতগুলো, রিকার্সিভভাবে গোনে।"""
+    if not node:
+        return 0
+    if is_leaf_level(node):
+        return len(node)
+    return sum(count_links(v) for v in node.values())
+
 async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -861,7 +869,12 @@ async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t(uid, "admin_no_titles"))
         return
 
-    all_lines = [f"{t(uid, 'admin_total_titles')} {len(titles)}", ""]
+    total_links = sum(count_links(db[title]) for title in titles)
+    all_lines = [
+        f"{t(uid, 'admin_total_titles')} {len(titles)}",
+        f"{t(uid, 'admin_stats_links')} {total_links}",
+        "",
+    ]
     for title in titles:
         node = db[title]
         if is_leaf_level(node):
@@ -871,10 +884,10 @@ async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
             all_lines.extend(format_node_lines(node, 1))
         all_lines.append("")
 
-    # ৩৫০০ ক্যারেক্টার করে ভাগ করে একাধিক মেসেজে পাঠানো (টেলিগ্রামের লিমিটের কারণে)
+    # টেলিগ্রামের আসল লিমিট ৪০৯৬ — তাই যতটা সম্ভব একটা মেসেজেই রাখা হয়, শুধু সত্যিকার দরকার হলেই ভাগ হবে
     chunk = ""
     for line in all_lines:
-        if len(chunk) + len(line) + 1 > 3500:
+        if len(chunk) + len(line) + 1 > 3900:
             await update.message.reply_text(chunk)
             chunk = ""
         chunk += line + "\n"
