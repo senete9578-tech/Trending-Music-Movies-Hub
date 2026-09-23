@@ -494,33 +494,6 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texts = TEXTS[lang_code]
     await query.edit_message_text(f"{texts['language_set']}\n{texts['search_prompt']}")
 
-# ---------- রিসেট / ক্লিয়ার চ্যাট ----------
-async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    buttons = [[
-        InlineKeyboardButton("Yes", callback_data="reset_yes"),
-        InlineKeyboardButton("No", callback_data="reset_no"),
-    ]]
-    await update.message.reply_text(
-        "Reset chat? This clears your language and search state here. Continue?",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-async def reset_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = query.from_user.id
-
-    if query.data == "reset_yes":
-        user_lang.pop(str(uid), None)
-        save_state("languages", LANG_FILE, user_lang)
-        last_search_results.pop(uid, None)
-        pending_request.pop(uid, None)
-        browse_state.pop(uid, None)
-        buttons = [[InlineKeyboardButton("Follow & Start", callback_data="begin")]]
-        await query.edit_message_text("Reset done.", reply_markup=InlineKeyboardMarkup(buttons))
-    else:
-        await query.edit_message_text("Cancelled.")
-
 # ---------- অ্যাডমিন: লিংক যোগ করা ----------
 async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -864,6 +837,21 @@ async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(t(uid, "admin_not_found"))
 
+def format_node_lines(node: dict, indent: int = 0):
+    """একটা টাইটেলের ভেতরের পুরো কাঠামো (সিজন/এপিসোড/লেবেল) লাইনে লাইনে দেখায়।"""
+    lines = []
+    prefix = "  " * indent
+    for key, value in node.items():
+        if isinstance(value, dict) and value:
+            if is_leaf_level(value):
+                lines.append(f"{prefix}- {key} ({len(value)})")
+            else:
+                lines.append(f"{prefix}- {key}")
+                lines.extend(format_node_lines(value, indent + 1))
+        else:
+            lines.append(f"{prefix}- {key}")
+    return lines
+
 async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -872,11 +860,26 @@ async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not titles:
         await update.message.reply_text(t(uid, "admin_no_titles"))
         return
-    shown = titles[:100]
-    text = f"{t(uid, 'admin_total_titles')} {len(titles)}\n\n" + "\n".join(f"• {x}" for x in shown)
-    if len(titles) > 100:
-        text += "\n" + t(uid, "admin_more").format(n=len(titles) - 100)
-    await update.message.reply_text(text)
+
+    all_lines = [f"{t(uid, 'admin_total_titles')} {len(titles)}", ""]
+    for title in titles:
+        node = db[title]
+        if is_leaf_level(node):
+            all_lines.append(f"{title} ({len(node)})")
+        else:
+            all_lines.append(title)
+            all_lines.extend(format_node_lines(node, 1))
+        all_lines.append("")
+
+    # ৩৫০০ ক্যারেক্টার করে ভাগ করে একাধিক মেসেজে পাঠানো (টেলিগ্রামের লিমিটের কারণে)
+    chunk = ""
+    for line in all_lines:
+        if len(chunk) + len(line) + 1 > 3500:
+            await update.message.reply_text(chunk)
+            chunk = ""
+        chunk += line + "\n"
+    if chunk.strip():
+        await update.message.reply_text(chunk)
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1207,7 +1210,6 @@ async def post_init(application: Application):
     await application.bot.set_my_commands([
         BotCommand("start", "Start"),
         BotCommand("language", "Change language"),
-        BotCommand("reset", "Reset chat"),
         BotCommand("latest", "Latest additions"),
     ])
 
@@ -1227,10 +1229,8 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("latest", latest))
     application.add_handler(CommandHandler("language", language_command))
-    application.add_handler(CommandHandler("reset", reset_command))
     application.add_handler(CommandHandler("removeloading", remove_loading_animation))
     application.add_handler(CallbackQueryHandler(begin_flow, pattern=r"^begin$"))
-    application.add_handler(CallbackQueryHandler(reset_confirm, pattern=r"^reset_"))
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
