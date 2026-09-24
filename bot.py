@@ -32,6 +32,7 @@ LANG_FILE = "lang.json"
 META_FILE = "meta.json"
 USERS_FILE = "users.json"
 SETTINGS_FILE = "settings.json"
+REQUESTS_FILE = "requests.json"
 
 PAGE_SIZE = 10
 
@@ -66,6 +67,7 @@ user_lang = load_state("languages", LANG_FILE, {})  # { "user_id": "lang_code" }
 title_meta = load_state("meta", META_FILE, {})      # { "title": {"added_at": iso_string} }
 known_users = set(load_state("users", USERS_FILE, []))
 bot_settings = load_state("settings", SETTINGS_FILE, {})   # { "loading_animations": [{"file_id":..., "type": "sticker"|"animation"}, ...] }
+pending_requests = load_state("requests", REQUESTS_FILE, {})   # normalized query text -> [user_id, ...] (যারা এটা খুঁজে না পেয়ে রিকোয়েস্ট করেছে)
 
 # ---------- লোডিং/প্রসেসিং টেক্সট-অ্যানিমেশন (একটা মেসেজ নিজেই বদলে বদলে দেখায়, ChatGPT/DeepSeek-স্টাইল) ----------
 LOADING_FRAME_SETS = [
@@ -145,6 +147,7 @@ TEXTS = {
         "back_button": "◀️ Back",
         "admin_loading_set": "Loading animation set ✅",
         "admin_loading_removed": "Loading animation removed ✅",
+        "request_fulfilled": "The title you requested is now available:",
     },
     "hi": {
         "choose_language": "अपनी भाषा चुनें:",
@@ -186,6 +189,7 @@ TEXTS = {
         "back_button": "◀️ पीछे",
         "admin_loading_set": "लोडिंग एनिमेशन सेट हो गया ✅",
         "admin_loading_removed": "लोडिंग एनिमेशन हटा दिया गया ✅",
+        "request_fulfilled": "आपने जो टाइटल रिक्वेस्ट किया था वह अब उपलब्ध है:",
     },
     "bn": {
         "choose_language": "আপনার ভাষা নির্বাচন করুন:",
@@ -227,6 +231,7 @@ TEXTS = {
         "back_button": "◀️ পেছনে",
         "admin_loading_set": "লোডিং অ্যানিমেশন সেট হয়েছে ✅",
         "admin_loading_removed": "লোডিং অ্যানিমেশন সরানো হয়েছে ✅",
+        "request_fulfilled": "তুমি যেটা রিকোয়েস্ট করেছিলে সেটা এখন পাওয়া যাচ্ছে:",
     },
     "ta": {
         "choose_language": "உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
@@ -268,6 +273,7 @@ TEXTS = {
         "back_button": "◀️ பின்",
         "admin_loading_set": "ஏற்றல் அனிமேஷன் அமைக்கப்பட்டது ✅",
         "admin_loading_removed": "ஏற்றல் அனிமேஷன் அகற்றப்பட்டது ✅",
+        "request_fulfilled": "நீங்கள் கோரிய தலைப்பு இப்போது கிடைக்கிறது:",
     },
     "te": {
         "choose_language": "మీ భాషను ఎంచుకోండి:",
@@ -309,6 +315,7 @@ TEXTS = {
         "back_button": "◀️ వెనక్కి",
         "admin_loading_set": "లోడింగ్ యానిమేషన్ సెట్ చేయబడింది ✅",
         "admin_loading_removed": "లోడింగ్ యానిమేషన్ తీసివేయబడింది ✅",
+        "request_fulfilled": "మీరు అభ్యర్థించిన టైటిల్ ఇప్పుడు అందుబాటులో ఉంది:",
     },
     "mr": {
         "choose_language": "तुमची भाषा निवडा:",
@@ -350,6 +357,7 @@ TEXTS = {
         "back_button": "◀️ मागे",
         "admin_loading_set": "लोडिंग अॅनिमेशन सेट केले ✅",
         "admin_loading_removed": "लोडिंग अॅनिमेशन काढले ✅",
+        "request_fulfilled": "तुम्ही विनंती केलेले शीर्षक आता उपलब्ध आहे:",
     },
     "gu": {
         "choose_language": "તમારી ભાષા પસંદ કરો:",
@@ -391,6 +399,7 @@ TEXTS = {
         "back_button": "◀️ પાછળ",
         "admin_loading_set": "લોડિંગ એનિમેશન સેટ થયું ✅",
         "admin_loading_removed": "લોડિંગ એનિમેશન દૂર કરવામાં આવ્યું ✅",
+        "request_fulfilled": "તમે વિનંતી કરેલું ટાઈટલ હવે ઉપલબ્ધ છે:",
     },
 }
 
@@ -458,7 +467,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user.id)
     buttons = [[InlineKeyboardButton("Follow & Start", callback_data="begin")]]
     await update.message.reply_text(
-        "Welcome! / स्वागत है! / স্বাগতম!",
+        "Welcome!",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -470,7 +479,7 @@ async def begin_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for code, name in LANGUAGES.items()
     ]
     await query.edit_message_text(
-        "Select your language / अपनी भाषा चुनें / আপনার ভাষা নির্বাচন করুন:",
+        "Select your language:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -480,7 +489,7 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for code, name in LANGUAGES.items()
     ]
     await update.message.reply_text(
-        "Select your language / अपनी भाषा चुनें / আপনার ভাষা নির্বাচন করুন:",
+        "Select your language:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -493,6 +502,102 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texts = TEXTS[lang_code]
     await query.edit_message_text(f"{texts['language_set']}\n{texts['search_prompt']}")
+
+# ---------- সাধারণ ইউজার কমান্ড ----------
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    register_user(uid)
+    await update.message.reply_text(
+        "Just type a movie or song name to search.\n\n"
+        "/search <name> - same as typing the name directly\n"
+        "/language - change language\n"
+        "/reset - reset your language & search state here\n"
+        "/latest - see the latest additions\n"
+        "/share - share this bot\n"
+        "/subscribe - get notified about new releases\n"
+        "/feedback <message> - send feedback\n"
+        "/support <message> - contact support"
+    )
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        uid = update.effective_user.id
+        register_user(uid)
+        await update.message.reply_text(t(uid, "search_prompt"))
+        return
+    await perform_search(update, context, parts[1].strip())
+
+async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    register_user(uid)
+    me = await context.bot.get_me()
+    await update.message.reply_text(f"Share this bot: https://t.me/{me.username}")
+
+async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    register_user(uid)
+    await update.message.reply_text("You're subscribed - you'll get a message here whenever new titles are added.")
+
+async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    register_user(uid)
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text("Send it like: /feedback your message here")
+        return
+    user = update.effective_user
+    name = f"@{user.username}" if user.username else (user.full_name or str(uid))
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Feedback from {name} (id: {uid}):\n{parts[1].strip()}")
+    except Exception:
+        pass
+    await update.message.reply_text("Thanks, your feedback has been sent.")
+
+async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    register_user(uid)
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text("Send it like: /support describe your issue here")
+        return
+    user = update.effective_user
+    name = f"@{user.username}" if user.username else (user.full_name or str(uid))
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Support request from {name} (id: {uid}):\n{parts[1].strip()}")
+    except Exception:
+        pass
+    await update.message.reply_text("Thanks, your message has been sent to support.")
+
+# ---------- রিসেট (ইউজারের ভাষা/সার্চ স্টেট রিসেট — চ্যাটের মেসেজ ডিলিট করে না, বট কখনো ইউজারের নিজের পাঠানো মেসেজ মুছতে পারে না) ----------
+async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    buttons = [[
+        InlineKeyboardButton("Yes", callback_data="reset_yes"),
+        InlineKeyboardButton("No", callback_data="reset_no"),
+    ]]
+    await update.message.reply_text(
+        "Reset your language & search state here? Continue?",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def reset_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+
+    if query.data == "reset_yes":
+        user_lang.pop(str(uid), None)
+        save_state("languages", LANG_FILE, user_lang)
+        last_search_results.pop(uid, None)
+        pending_request.pop(uid, None)
+        browse_state.pop(uid, None)
+        buttons = [
+            [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
+            for code, name in LANGUAGES.items()
+        ]
+        await query.edit_message_text("Reset done. Select your language:", reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await query.edit_message_text("Cancelled.")
 
 # ---------- অ্যাডমিন: লিংক যোগ করা ----------
 async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -522,6 +627,7 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     title_meta.setdefault(existing_title, {})["added_at"] = datetime.now(timezone.utc).isoformat()
     save_state("meta", META_FILE, title_meta)
+    await notify_fulfilled_requests(context, existing_title)
 
     await update.message.reply_text(
         f"{t(uid, 'admin_added')}\n{t(uid, 'title_label')} {existing_title}\n{t(uid, 'quality_label')} {quality}"
@@ -560,6 +666,7 @@ async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     title_meta.setdefault(existing_title, {})["added_at"] = datetime.now(timezone.utc).isoformat()
     save_state("meta", META_FILE, title_meta)
+    await notify_fulfilled_requests(context, existing_title)
 
     await update.message.reply_text(
         f"{t(uid, 'admin_added')}\n"
@@ -606,6 +713,7 @@ async def add_movie_in_series(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     title_meta.setdefault(existing_title, {})["added_at"] = datetime.now(timezone.utc).isoformat()
     save_state("meta", META_FILE, title_meta)
+    await notify_fulfilled_requests(context, existing_title)
 
     await update.message.reply_text(
         f"{t(uid, 'admin_added')}\n"
@@ -976,8 +1084,28 @@ async def remove_loading_animation(update: Update, context: ContextTypes.DEFAULT
     save_state("settings", SETTINGS_FILE, bot_settings)
     await update.message.reply_text(t(uid, "admin_loading_removed"))
 
-async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    raw_query = update.message.text.strip()
+async def notify_fulfilled_requests(context: ContextTypes.DEFAULT_TYPE, new_title: str):
+    """নতুন কোনো টাইটেল/সিরিজ যোগ হলে, আগে যারা এই নামে খুঁজে না পেয়ে রিকোয়েস্ট করেছিল
+    তাদের সবাইকে নোটিফাই করে, তারপর সেই রিকোয়েস্টগুলো তালিকা থেকে সরিয়ে দেয়।"""
+    fulfilled_keys = []
+    for query_key, user_ids in list(pending_requests.items()):
+        if fuzzy_search(query_key, [new_title]):
+            for req_uid in user_ids:
+                try:
+                    await context.bot.send_message(
+                        chat_id=req_uid,
+                        text=f"{t(req_uid, 'request_fulfilled')}\n{new_title}"
+                    )
+                except Exception:
+                    pass
+            fulfilled_keys.append(query_key)
+    if fulfilled_keys:
+        for k in fulfilled_keys:
+            pending_requests.pop(k, None)
+        save_state("requests", REQUESTS_FILE, pending_requests)
+
+async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_query: str):
+    raw_query = raw_query.strip()
     if not raw_query:
         return
     uid = update.effective_user.id
@@ -987,6 +1115,11 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not matches:
         pending_request[uid] = raw_query
+        key = raw_query.strip().lower()
+        waiting = pending_requests.setdefault(key, [])
+        if uid not in waiting:
+            waiting.append(uid)
+            save_state("requests", REQUESTS_FILE, pending_requests)
         user = update.effective_user
         name = f"@{user.username}" if user.username else (user.full_name or str(uid))
         try:
@@ -1001,6 +1134,9 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     last_search_results[uid] = matches
     await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
+
+async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await perform_search(update, context, update.message.text or "")
 
 async def paginate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1221,9 +1357,15 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
 # ---------- মেইন ----------
 async def post_init(application: Application):
     await application.bot.set_my_commands([
-        BotCommand("start", "Start"),
-        BotCommand("language", "Change language"),
-        BotCommand("latest", "Latest additions"),
+        BotCommand("search", "search for movies or songs"),
+        BotCommand("help", "get help"),
+        BotCommand("reset", "reset your language & search state"),
+        BotCommand("language", "set the language"),
+        BotCommand("latest", "show trending movies and songs"),
+        BotCommand("share", "share the bot with your friends"),
+        BotCommand("subscribe", "subscribe for new updates and releases"),
+        BotCommand("feedback", "send your feedback or suggestions"),
+        BotCommand("support", "contact support for any help"),
     ])
 
 def build_application() -> Application:
@@ -1242,7 +1384,15 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("latest", latest))
     application.add_handler(CommandHandler("language", language_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("search", search_command))
+    application.add_handler(CommandHandler("reset", reset_command))
+    application.add_handler(CommandHandler("share", share_command))
+    application.add_handler(CommandHandler("subscribe", subscribe_command))
+    application.add_handler(CommandHandler("feedback", feedback_command))
+    application.add_handler(CommandHandler("support", support_command))
     application.add_handler(CommandHandler("removeloading", remove_loading_animation))
+    application.add_handler(CallbackQueryHandler(reset_confirm, pattern=r"^reset_"))
     application.add_handler(CallbackQueryHandler(begin_flow, pattern=r"^begin$"))
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
