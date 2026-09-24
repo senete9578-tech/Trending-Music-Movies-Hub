@@ -955,21 +955,20 @@ async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(t(uid, "admin_not_found"))
 
-def format_node_lines(node: dict, indent: int = 0):
-    """একটা টাইটেলের ভেতরের পুরো কাঠামো (সিজন/এপিসোড/লেবেল/কোয়ালিটি) লাইনে লাইনে দেখায়।"""
+def format_node_lines(node: dict, path_prefix: str):
+    """প্রতিটা লিফ (আসল লিংক) পর্যন্ত পুরো পথ জুড়ে একটাই লাইনে সম্পূর্ণ নাম দেখায়
+    (টাইটেল - সিজন - এপিসোড - কোয়ালিটি), আলাদা করে ইনডেন্ট করা ট্রি না।"""
     lines = []
-    prefix = "  " * indent
     for key, value in node.items():
+        full_name = f"{path_prefix} - {key}"
         if isinstance(value, dict) and value:
             if is_leaf_level(value):
-                lines.append(f"{prefix}- {key}")
                 for q in value.keys():
-                    lines.append(f"{prefix}    {q}")
+                    lines.append(f"{full_name} - {q}")
             else:
-                lines.append(f"{prefix}- {key}")
-                lines.extend(format_node_lines(value, indent + 1))
+                lines.extend(format_node_lines(value, full_name))
         else:
-            lines.append(f"{prefix}- {key}")
+            lines.append(full_name)
     return lines
 
 def count_links(node: dict) -> int:
@@ -998,12 +997,10 @@ async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for title in titles:
         node = db[title]
         if is_leaf_level(node):
-            all_lines.append(title)
             for q in node.keys():
-                all_lines.append(f"    {q}")
+                all_lines.append(f"{title} - {q}")
         else:
-            all_lines.append(title)
-            all_lines.extend(format_node_lines(node, 1))
+            all_lines.extend(format_node_lines(node, title))
         all_lines.append("")
 
     # টেলিগ্রামের আসল লিমিট ৪০৯৬ — তাই যতটা সম্ভব একটা মেসেজেই রাখা হয়, শুধু সত্যিকার দরকার হলেই ভাগ হবে
@@ -1031,8 +1028,20 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{t(uid, 'admin_stats_users')} {total_users}",
         "",
     ]
+    names_changed = False
     for u in known_users:
-        all_lines.append(f"- {user_names.get(str(u), str(u))}")
+        name = user_names.get(str(u))
+        if not name:
+            try:
+                chat = await context.bot.get_chat(u)
+                name = f"@{chat.username}" if chat.username else (chat.full_name or str(u))
+                user_names[str(u)] = name
+                names_changed = True
+            except Exception:
+                name = str(u)
+        all_lines.append(f"- {name}")
+    if names_changed:
+        save_state("user_names", USER_NAMES_FILE, user_names)
 
     chunk = ""
     for line in all_lines:
