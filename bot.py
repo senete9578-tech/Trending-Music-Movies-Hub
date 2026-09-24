@@ -34,6 +34,7 @@ USERS_FILE = "users.json"
 SETTINGS_FILE = "settings.json"
 REQUESTS_FILE = "requests.json"
 LATEST_FILE = "latest.json"
+USER_NAMES_FILE = "user_names.json"
 
 PAGE_SIZE = 10
 
@@ -70,6 +71,7 @@ known_users = set(load_state("users", USERS_FILE, []))
 bot_settings = load_state("settings", SETTINGS_FILE, {})   # { "loading_animations": [{"file_id":..., "type": "sticker"|"animation"}, ...] }
 pending_requests = load_state("requests", REQUESTS_FILE, {})   # normalized query text -> [user_id, ...] (যারা এটা খুঁজে না পেয়ে রিকোয়েস্ট করেছে)
 latest_titles = load_state("latest", LATEST_FILE, {})   # title -> মার্ক করার সময় (অ্যাডমিন নিজে হাতে "Latest"-এ যোগ করা টাইটেল)
+user_names = load_state("user_names", USER_NAMES_FILE, {})   # str(user_id) -> display name (username/full name)
 
 # ---------- লোডিং/প্রসেসিং টেক্সট-অ্যানিমেশন (একটা মেসেজ নিজেই বদলে বদলে দেখায়, ChatGPT/DeepSeek-স্টাইল) ----------
 LOADING_FRAME_SETS = [
@@ -92,10 +94,16 @@ last_search_results = {}   # user_id -> [title, ...]  (পেজিনেশন�
 pending_request = {}       # user_id -> query text     (রিকোয়েস্ট বাটনের জন্য)
 browse_state = {}          # user_id -> {"title":..., "path":[...], "children":[...]}  (সিজন/এপিসোড নেভিগেশনের জন্য)
 
-def register_user(user_id: int):
+def register_user(user_id: int, tg_user=None):
     if user_id not in known_users:
         known_users.add(user_id)
         save_state("users", USERS_FILE, list(known_users))
+    if tg_user is not None:
+        name = f"@{tg_user.username}" if tg_user.username else (tg_user.full_name or str(user_id))
+        key = str(user_id)
+        if user_names.get(key) != name:
+            user_names[key] = name
+            save_state("user_names", USER_NAMES_FILE, user_names)
 
 # ---------- ভাষা ----------
 LANGUAGES = {
@@ -466,7 +474,7 @@ def build_results_keyboard(titles, page: int = 0):
 
 # ---------- /start ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    register_user(update.effective_user.id)
+    register_user(update.effective_user.id, update.effective_user)
     buttons = [[InlineKeyboardButton("Follow & Start", callback_data="begin")]]
     await update.message.reply_text(
         "Welcome!",
@@ -508,7 +516,7 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------- সাধারণ ইউজার কমান্ড ----------
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    register_user(uid)
+    register_user(uid, update.effective_user)
     await update.message.reply_text(
         "Just type a movie or song name to search.\n\n"
         "/search <name> - same as typing the name directly\n"
@@ -525,25 +533,25 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
         uid = update.effective_user.id
-        register_user(uid)
+        register_user(uid, update.effective_user)
         await update.message.reply_text(t(uid, "search_prompt"))
         return
     await perform_search(update, context, parts[1].strip())
 
 async def share_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    register_user(uid)
+    register_user(uid, update.effective_user)
     me = await context.bot.get_me()
     await update.message.reply_text(f"Share this bot: https://t.me/{me.username}")
 
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    register_user(uid)
+    register_user(uid, update.effective_user)
     await update.message.reply_text("You're subscribed - you'll get a message here whenever new titles are added.")
 
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    register_user(uid)
+    register_user(uid, update.effective_user)
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
         await update.message.reply_text("Send it like: /feedback your message here")
@@ -558,7 +566,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    register_user(uid)
+    register_user(uid, update.effective_user)
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
         await update.message.reply_text("Send it like: /support describe your issue here")
@@ -948,13 +956,15 @@ async def remove_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t(uid, "admin_not_found"))
 
 def format_node_lines(node: dict, indent: int = 0):
-    """একটা টাইটেলের ভেতরের পুরো কাঠামো (সিজন/এপিসোড/লেবেল) লাইনে লাইনে দেখায়।"""
+    """একটা টাইটেলের ভেতরের পুরো কাঠামো (সিজন/এপিসোড/লেবেল/কোয়ালিটি) লাইনে লাইনে দেখায়।"""
     lines = []
     prefix = "  " * indent
     for key, value in node.items():
         if isinstance(value, dict) and value:
             if is_leaf_level(value):
-                lines.append(f"{prefix}- {key} ({len(value)})")
+                lines.append(f"{prefix}- {key}")
+                for q in value.keys():
+                    lines.append(f"{prefix}    {q}")
             else:
                 lines.append(f"{prefix}- {key}")
                 lines.extend(format_node_lines(value, indent + 1))
@@ -988,7 +998,9 @@ async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for title in titles:
         node = db[title]
         if is_leaf_level(node):
-            all_lines.append(f"{title} ({len(node)})")
+            all_lines.append(title)
+            for q in node.keys():
+                all_lines.append(f"    {q}")
         else:
             all_lines.append(title)
             all_lines.extend(format_node_lines(node, 1))
@@ -1009,14 +1021,27 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     uid = update.effective_user.id
     total_titles = len(db)
-    total_links = sum(len(q) for q in db.values())
+    total_links = sum(count_links(node) for node in db.values())
     total_users = len(known_users)
-    await update.message.reply_text(
-        f"{t(uid, 'admin_stats_header')}\n"
-        f"{t(uid, 'admin_stats_titles')} {total_titles}\n"
-        f"{t(uid, 'admin_stats_links')} {total_links}\n"
-        f"{t(uid, 'admin_stats_users')} {total_users}"
-    )
+
+    all_lines = [
+        t(uid, "admin_stats_header"),
+        f"{t(uid, 'admin_stats_titles')} {total_titles}",
+        f"{t(uid, 'admin_stats_links')} {total_links}",
+        f"{t(uid, 'admin_stats_users')} {total_users}",
+        "",
+    ]
+    for u in known_users:
+        all_lines.append(f"- {user_names.get(str(u), str(u))}")
+
+    chunk = ""
+    for line in all_lines:
+        if len(chunk) + len(line) + 1 > 3900:
+            await update.message.reply_text(chunk)
+            chunk = ""
+        chunk += line + "\n"
+    if chunk.strip():
+        await update.message.reply_text(chunk)
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1076,7 +1101,7 @@ async def remove_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    register_user(uid)
+    register_user(uid, update.effective_user)
     titles_sorted = sorted(
         [x for x in latest_titles if x in db],
         key=lambda x: latest_titles.get(x, ""),
@@ -1145,7 +1170,7 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     if not raw_query:
         return
     uid = update.effective_user.id
-    register_user(uid)
+    register_user(uid, update.effective_user)
 
     matches = fuzzy_search(raw_query, db.keys())
 
