@@ -33,6 +33,7 @@ META_FILE = "meta.json"
 USERS_FILE = "users.json"
 SETTINGS_FILE = "settings.json"
 REQUESTS_FILE = "requests.json"
+LATEST_FILE = "latest.json"
 
 PAGE_SIZE = 10
 
@@ -68,6 +69,7 @@ title_meta = load_state("meta", META_FILE, {})      # { "title": {"added_at": is
 known_users = set(load_state("users", USERS_FILE, []))
 bot_settings = load_state("settings", SETTINGS_FILE, {})   # { "loading_animations": [{"file_id":..., "type": "sticker"|"animation"}, ...] }
 pending_requests = load_state("requests", REQUESTS_FILE, {})   # normalized query text -> [user_id, ...] (যারা এটা খুঁজে না পেয়ে রিকোয়েস্ট করেছে)
+latest_titles = load_state("latest", LATEST_FILE, {})   # title -> মার্ক করার সময় (অ্যাডমিন নিজে হাতে "Latest"-এ যোগ করা টাইটেল)
 
 # ---------- লোডিং/প্রসেসিং টেক্সট-অ্যানিমেশন (একটা মেসেজ নিজেই বদলে বদলে দেখায়, ChatGPT/DeepSeek-স্টাইল) ----------
 LOADING_FRAME_SETS = [
@@ -1038,12 +1040,46 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{t(uid, 'admin_broadcast_failed')} {failed}"
     )
 
+async def set_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/setlatest Title")
+        return
+    title = parts[1].strip()
+    matched = find_existing_title(title)
+    if matched not in db:
+        await update.message.reply_text(t(uid, "admin_not_found"))
+        return
+    latest_titles[matched] = datetime.now(timezone.utc).isoformat()
+    save_state("latest", LATEST_FILE, latest_titles)
+    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{matched}")
+
+async def remove_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removelatest Title")
+        return
+    title = parts[1].strip()
+    matched = find_existing_title(title)
+    if matched not in latest_titles:
+        await update.message.reply_text(t(uid, "admin_not_found"))
+        return
+    del latest_titles[matched]
+    save_state("latest", LATEST_FILE, latest_titles)
+    await update.message.reply_text(f"{t(uid, 'admin_deleted')}\n{matched}")
+
 async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     register_user(uid)
     titles_sorted = sorted(
-        db.keys(),
-        key=lambda x: title_meta.get(x, {}).get("added_at", ""),
+        [x for x in latest_titles if x in db],
+        key=lambda x: latest_titles.get(x, ""),
         reverse=True
     )[:10]
     if not titles_sorted:
@@ -1383,6 +1419,8 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("latest", latest))
+    application.add_handler(CommandHandler("setlatest", set_latest))
+    application.add_handler(CommandHandler("removelatest", remove_latest))
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("search", search_command))
