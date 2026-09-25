@@ -72,6 +72,11 @@ bot_settings = load_state("settings", SETTINGS_FILE, {})   # { "loading_animatio
 pending_requests = load_state("requests", REQUESTS_FILE, {})   # normalized query text -> [user_id, ...] (যারা এটা খুঁজে না পেয়ে রিকোয়েস্ট করেছে)
 latest_titles = load_state("latest", LATEST_FILE, {})   # title -> মার্ক করার সময় (অ্যাডমিন নিজে হাতে "Latest"-এ যোগ করা টাইটেল)
 user_names = load_state("user_names", USER_NAMES_FILE, {})   # str(user_id) -> display name (username/full name)
+SEARCH_HISTORY_FILE = "search_history.json"
+DOWNLOAD_HISTORY_FILE = "download_history.json"
+user_search_history = load_state("search_history", SEARCH_HISTORY_FILE, {})   # str(user_id) -> [query, ...] (সর্বশেষ কয়েকটা)
+user_download_history = load_state("download_history", DOWNLOAD_HISTORY_FILE, {})   # str(user_id) -> [title, ...] (সর্বশেষ কয়েকটা)
+HISTORY_LIMIT = 15
 
 # ---------- লোডিং/প্রসেসিং টেক্সট-অ্যানিমেশন (একটা মেসেজ নিজেই বদলে বদলে দেখায়, ChatGPT/DeepSeek-স্টাইল) ----------
 LOADING_FRAME_SETS = [
@@ -507,7 +512,8 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     lang_code = query.data.split("::", 1)[1]
-    user_lang[str(query.from_user.id)] = lang_code
+    uid = query.from_user.id
+    user_lang[str(uid)] = lang_code
     save_state("languages", LANG_FILE, user_lang)
 
     texts = TEXTS[lang_code]
@@ -1039,7 +1045,14 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 names_changed = True
             except Exception:
                 name = str(u)
-        all_lines.append(f"- {name}")
+        searched = user_search_history.get(str(u), [])
+        downloaded = user_download_history.get(str(u), [])
+        line = f"- {name}"
+        if searched:
+            line += f"\n    Searched: {', '.join(searched)}"
+        if downloaded:
+            line += f"\n    Downloaded: {', '.join(downloaded)}"
+        all_lines.append(line)
     if names_changed:
         save_state("user_names", USER_NAMES_FILE, user_names)
 
@@ -1180,6 +1193,11 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
         return
     uid = update.effective_user.id
     register_user(uid, update.effective_user)
+
+    hist = user_search_history.setdefault(str(uid), [])
+    hist.append(raw_query)
+    del hist[:-HISTORY_LIMIT]
+    save_state("search_history", SEARCH_HISTORY_FILE, user_search_history)
 
     matches = fuzzy_search(raw_query, db.keys())
 
@@ -1377,6 +1395,12 @@ async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     label = f"{state['title']} - {' / '.join(state['path'])} ({quality})"
+
+    hist = user_download_history.setdefault(str(uid), [])
+    hist.append(f"{state['title']} - {' / '.join(state['path'])}")
+    del hist[:-HISTORY_LIMIT]
+    save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
+
     await query.message.reply_text(
         f"{label}\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
     )
@@ -1392,6 +1416,11 @@ async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not link:
         await query.message.reply_text(t(uid, "link_not_found"))
         return
+
+    hist = user_download_history.setdefault(str(uid), [])
+    hist.append(title)
+    del hist[:-HISTORY_LIMIT]
+    save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
     await query.message.reply_text(
         f"{title} ({quality})\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
