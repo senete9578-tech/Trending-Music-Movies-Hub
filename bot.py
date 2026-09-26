@@ -1093,16 +1093,36 @@ async def set_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
-        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/setlatest Title")
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/setlatest Title\nor: /setlatest Title | Label (e.g. Part 2)")
         return
-    title = parts[1].strip()
+
+    segments = [s.strip() for s in parts[1].split("|")]
+    title = segments[0]
     matched = find_existing_title(title)
     if matched not in db:
         await update.message.reply_text(t(uid, "admin_not_found"))
         return
-    latest_titles[matched] = datetime.now(timezone.utc).isoformat()
+
+    node = db[matched]
+    path = []
+    display = matched
+    for label in segments[1:]:
+        if not isinstance(node, dict) or label not in node:
+            await update.message.reply_text(t(uid, "admin_not_found"))
+            return
+        path.append(label)
+        node = node[label]
+        display += f" - {label}"
+
+    key = matched if not path else f"{matched}::{'::'.join(path)}"
+    latest_titles[key] = {
+        "title": matched,
+        "path": path,
+        "display": display,
+        "marked_at": datetime.now(timezone.utc).isoformat(),
+    }
     save_state("latest", LATEST_FILE, latest_titles)
-    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{matched}")
+    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{display}")
 
 async def remove_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1110,30 +1130,83 @@ async def remove_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
-        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removelatest Title")
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removelatest Title\nor: /removelatest Title | Label")
         return
-    title = parts[1].strip()
+
+    segments = [s.strip() for s in parts[1].split("|")]
+    title = segments[0]
     matched = find_existing_title(title)
-    if matched not in latest_titles:
+    key = matched if len(segments) == 1 else f"{matched}::{'::'.join(segments[1:])}"
+
+    if key not in latest_titles:
         await update.message.reply_text(t(uid, "admin_not_found"))
         return
-    del latest_titles[matched]
+    display = latest_titles[key].get("display", key) if isinstance(latest_titles[key], dict) else key
+    del latest_titles[key]
     save_state("latest", LATEST_FILE, latest_titles)
-    await update.message.reply_text(f"{t(uid, 'admin_deleted')}\n{matched}")
+    await update.message.reply_text(f"{t(uid, 'admin_deleted')}\n{display}")
+
+latest_entries_cache = {}   # user_id -> [{"title":..., "path":[...], "display":...}, ...] (/latest বাটনগুলোর রেফারেন্সের জন্য)
 
 async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     register_user(uid, update.effective_user)
-    titles_sorted = sorted(
-        [x for x in latest_titles if x in db],
-        key=lambda x: latest_titles.get(x, ""),
-        reverse=True
-    )[:10]
-    if not titles_sorted:
+
+    normalized = []
+    for key, value in latest_titles.items():
+        if isinstance(value, dict):
+            if value.get("title") in db:
+                normalized.append(value)
+        elif key in db:
+            # পুরনো ফরম্যাট (শুধু টাইমস্ট্যাম্প স্ট্রিং) — টপ-লেভেল এন্ট্রি হিসেবে ধরা হচ্ছে
+            normalized.append({"title": key, "path": [], "display": key, "marked_at": value})
+
+    normalized.sort(key=lambda v: v.get("marked_at", ""), reverse=True)
+    normalized = normalized[:10]
+
+    if not normalized:
         await update.message.reply_text(t(uid, "not_found"))
         return
-    last_search_results[uid] = titles_sorted
-    await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(titles_sorted, 0))
+
+    latest_entries_cache[uid] = normalized
+    buttons = [
+        [InlineKeyboardButton(v["display"], callback_data=f"latestopen::{i}")]
+        for i, v in enumerate(normalized)
+    ]
+    await update.message.reply_text(t(uid, "results"), reply_markup=InlineKeyboardMarkup(buttons))
+
+async def open_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    idx = int(query.data.split("::", 1)[1])
+    entries = latest_entries_cache.get(uid)
+    if not entries or idx >= len(entries):
+        return
+
+    info = entries[idx]
+    title = info["title"]
+    path = list(info.get("path", []))
+
+    node = db.get(title, {})
+    for key in path:
+        node = node.get(key, {})
+    if not node:
+        await query.edit_message_text(t(uid, "content_unavailable"))
+        return
+
+    label = title if not path else f"{title} - {' / '.join(path)}"
+    browse_state[uid] = {"title": title, "path": path, "children": list(node.keys())}
+
+    if is_leaf_level(node):
+        buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(node.keys())]
+        option_key = "select_quality"
+    else:
+        buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(node.keys())]
+        option_key = "select_option"
+    buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
+
+    await query.edit_message_text(f"{label}\n{t(uid, option_key)}", reply_markup=InlineKeyboardMarkup(buttons))
 
 # ---------- সার্চ ----------
 async def capture_loading_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1499,6 +1572,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
     application.add_handler(CallbackQueryHandler(navigate, pattern=r"^nav::"))
+    application.add_handler(CallbackQueryHandler(open_latest, pattern=r"^latestopen::"))
     application.add_handler(CallbackQueryHandler(go_back, pattern=r"^navback$"))
     application.add_handler(CallbackQueryHandler(send_file_nav, pattern=r"^getnav::"))
     application.add_handler(CallbackQueryHandler(paginate, pattern=r"^page::"))
