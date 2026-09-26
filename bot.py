@@ -1049,9 +1049,21 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         downloaded = user_download_history.get(str(u), [])
         line = f"- {name}"
         if searched:
-            line += f"\n    Searched: {', '.join(searched)}"
+            line += "\n    Searched:"
+            for s in searched:
+                if isinstance(s, dict):
+                    when = s.get("t", "")[:16].replace("T", " ")
+                    line += f"\n      {s.get('q','')} ({when})" if when else f"\n      {s.get('q','')}"
+                else:
+                    line += f"\n      {s}"
         if downloaded:
-            line += f"\n    Downloaded: {', '.join(downloaded)}"
+            line += "\n    Downloaded:"
+            for d in downloaded:
+                if isinstance(d, dict):
+                    when = d.get("t", "")[:16].replace("T", " ")
+                    line += f"\n      {d.get('title','')} ({when})" if when else f"\n      {d.get('title','')}"
+                else:
+                    line += f"\n      {d}"
         all_lines.append(line)
     if names_changed:
         save_state("user_names", USER_NAMES_FILE, user_names)
@@ -1196,7 +1208,7 @@ async def open_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     label = title if not path else f"{title} - {' / '.join(path)}"
-    browse_state[uid] = {"title": title, "path": path, "children": list(node.keys())}
+    browse_state[uid] = {"title": title, "path": path, "children": list(node.keys()), "floor": len(path), "origin": "latest"}
 
     if is_leaf_level(node):
         buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(node.keys())]
@@ -1268,7 +1280,7 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     register_user(uid, update.effective_user)
 
     hist = user_search_history.setdefault(str(uid), [])
-    hist.append(raw_query)
+    hist.append({"q": raw_query, "t": datetime.now(timezone.utc).isoformat()})
     del hist[:-HISTORY_LIMIT]
     save_state("search_history", SEARCH_HISTORY_FILE, user_search_history)
 
@@ -1410,8 +1422,9 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     uid = query.from_user.id
     state = browse_state.get(uid)
+    floor = state.get("floor", 0) if state else 0
 
-    if state and state["path"]:
+    if state and len(state["path"]) > floor:
         state["path"] = state["path"][:-1]
         node = db.get(state["title"], {})
         for key in state["path"]:
@@ -1435,6 +1448,20 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"{label}\n{t(uid, option_key)}", reply_markup=InlineKeyboardMarkup(buttons)
         )
+        return
+
+    # ফ্লোরে পৌঁছে গেছে — যেখান থেকে শুরু হয়েছিল সেখানেই ফিরে যাও
+    if state and state.get("origin") == "latest":
+        browse_state.pop(uid, None)
+        entries = latest_entries_cache.get(uid, [])
+        if entries:
+            buttons = [
+                [InlineKeyboardButton(v["display"], callback_data=f"latestopen::{i}")]
+                for i, v in enumerate(entries)
+            ]
+            await query.edit_message_text(t(uid, "results"), reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            await query.edit_message_text(t(uid, "not_found"))
         return
 
     # path খালি (বা কোনো state নেই) — সার্চ রেজাল্টে ফিরে যাও
@@ -1470,7 +1497,7 @@ async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     label = f"{state['title']} - {' / '.join(state['path'])} ({quality})"
 
     hist = user_download_history.setdefault(str(uid), [])
-    hist.append(f"{state['title']} - {' / '.join(state['path'])}")
+    hist.append({"title": f"{state['title']} - {' / '.join(state['path'])}", "t": datetime.now(timezone.utc).isoformat()})
     del hist[:-HISTORY_LIMIT]
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
@@ -1491,7 +1518,7 @@ async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     hist = user_download_history.setdefault(str(uid), [])
-    hist.append(title)
+    hist.append({"title": title, "t": datetime.now(timezone.utc).isoformat()})
     del hist[:-HISTORY_LIMIT]
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
