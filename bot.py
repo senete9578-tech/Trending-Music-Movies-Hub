@@ -73,8 +73,14 @@ pending_requests = load_state("requests", REQUESTS_FILE, {})   # normalized quer
 latest_titles = load_state("latest", LATEST_FILE, {})   # title -> মার্ক করার সময় (অ্যাডমিন নিজে হাতে "Latest"-এ যোগ করা টাইটেল)
 user_names = load_state("user_names", USER_NAMES_FILE, {})   # str(user_id) -> display name (username/full name)
 SEARCH_HISTORY_FILE = "search_history.json"
+POSTERS_FILE = "posters.json"
 DOWNLOAD_HISTORY_FILE = "download_history.json"
 user_search_history = load_state("search_history", SEARCH_HISTORY_FILE, {})   # str(user_id) -> [query, ...] (সর্বশেষ কয়েকটা)
+title_posters = load_state("posters", POSTERS_FILE, {})   # title -> ছবির file_id অথবা URL
+CATEGORY_FILE = "categories.json"
+category_tree = load_state("categories", CATEGORY_FILE, {})   # নেস্টেড ফোল্ডার, প্রতিটা নোডে "_titles" কী-তে আসল টাইটেলের লিস্ট থাকে
+category_browse_state = {}   # user_id -> {"path": [...], "children": [("folder"|"title", name), ...]}
+awaiting_poster = {}   # admin এখন কোন টাইটেলের জন্য ছবি পাঠাবে (ট্রানজিয়েন্ট)
 user_download_history = load_state("download_history", DOWNLOAD_HISTORY_FILE, {})   # str(user_id) -> [title, ...] (সর্বশেষ কয়েকটা)
 HISTORY_LIMIT = 15
 
@@ -518,6 +524,10 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texts = TEXTS[lang_code]
     await query.edit_message_text(f"{texts['language_set']}\n{texts['search_prompt']}")
+
+    cat_text, cat_markup = render_category_level(uid, [])
+    if cat_text and cat_markup.inline_keyboard:
+        await context.bot.send_message(chat_id=uid, text=cat_text, reply_markup=cat_markup)
 
 # ---------- সাধারণ ইউজার কমান্ড ----------
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1019,6 +1029,19 @@ async def list_titles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chunk.strip():
         await update.message.reply_text(chunk)
 
+from datetime import timedelta
+BD_OFFSET = timedelta(hours=5, minutes=30)   # ভারতীয় সময় (IST, UTC+5:30) — স্ট্যাটসে দেখানোর সময় এতে কনভার্ট করা হয়
+
+def to_local_time(iso_str: str) -> str:
+    if not iso_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        local = dt + BD_OFFSET
+        return local.strftime("%d %b, %I:%M %p")
+    except Exception:
+        return iso_str[:16].replace("T", " ")
+
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -1052,7 +1075,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             line += "\n    Searched:"
             for s in searched:
                 if isinstance(s, dict):
-                    when = s.get("t", "")[:16].replace("T", " ")
+                    when = to_local_time(s.get("t", ""))
                     line += f"\n      {s.get('q','')} ({when})" if when else f"\n      {s.get('q','')}"
                 else:
                     line += f"\n      {s}"
@@ -1060,7 +1083,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             line += "\n    Downloaded:"
             for d in downloaded:
                 if isinstance(d, dict):
-                    when = d.get("t", "")[:16].replace("T", " ")
+                    when = to_local_time(d.get("t", ""))
                     line += f"\n      {d.get('title','')} ({when})" if when else f"\n      {d.get('title','')}"
                 else:
                     line += f"\n      {d}"
@@ -1098,6 +1121,48 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{t(uid, 'admin_broadcast_success')} {sent}\n"
         f"{t(uid, 'admin_broadcast_failed')} {failed}"
     )
+
+async def set_poster(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(
+            f"{t(uid, 'admin_format_error')}\n"
+            "/setposter Title   (then send the poster photo next)\n"
+            "or: /setposter Title | image URL"
+        )
+        return
+
+    raw = parts[1].strip()
+    if "|" in raw:
+        title, url = [s.strip() for s in raw.split("|", 1)]
+        matched = find_existing_title(title)
+        if matched not in db:
+            await update.message.reply_text(t(uid, "admin_not_found"))
+            return
+        title_posters[matched] = url
+        save_state("posters", POSTERS_FILE, title_posters)
+        await update.message.reply_text(f"{t(uid, 'admin_added')}\n{matched}")
+        return
+
+    matched = find_existing_title(raw)
+    if matched not in db:
+        await update.message.reply_text(t(uid, "admin_not_found"))
+        return
+    awaiting_poster[uid] = matched
+    await update.message.reply_text(f"Now send the poster photo for:\n{matched}")
+
+async def receive_poster_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if uid != ADMIN_ID or uid not in awaiting_poster:
+        return
+    title = awaiting_poster.pop(uid)
+    photo = update.message.photo[-1]
+    title_posters[title] = photo.file_id
+    save_state("posters", POSTERS_FILE, title_posters)
+    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{title}")
 
 async def set_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1160,10 +1225,7 @@ async def remove_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 latest_entries_cache = {}   # user_id -> [{"title":..., "path":[...], "display":...}, ...] (/latest বাটনগুলোর রেফারেন্সের জন্য)
 
-async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    register_user(uid, update.effective_user)
-
+def get_latest_entries(limit=10):
     normalized = []
     for key, value in latest_titles.items():
         if isinstance(value, dict):
@@ -1172,9 +1234,14 @@ async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif key in db:
             # পুরনো ফরম্যাট (শুধু টাইমস্ট্যাম্প স্ট্রিং) — টপ-লেভেল এন্ট্রি হিসেবে ধরা হচ্ছে
             normalized.append({"title": key, "path": [], "display": key, "marked_at": value})
-
     normalized.sort(key=lambda v: v.get("marked_at", ""), reverse=True)
-    normalized = normalized[:10]
+    return normalized[:limit]
+
+async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    register_user(uid, update.effective_user)
+
+    normalized = get_latest_entries(10)
 
     if not normalized:
         await update.message.reply_text(t(uid, "not_found"))
@@ -1284,6 +1351,15 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     del hist[:-HISTORY_LIMIT]
     save_state("search_history", SEARCH_HISTORY_FILE, user_search_history)
 
+    frames = random.choice(LOADING_FRAME_SETS)
+    sent = await update.message.reply_text(frames[0], parse_mode="Markdown")
+    for frame in frames[1:]:
+        try:
+            await asyncio.sleep(0.4)
+            await sent.edit_text(frame, parse_mode="Markdown")
+        except Exception:
+            pass
+
     matches = fuzzy_search(raw_query, db.keys())
 
     if not matches:
@@ -1302,11 +1378,25 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
             )
         except Exception:
             pass
-        await update.message.reply_text(t(uid, "not_found"))
+        suggestions = get_latest_entries(7)
+        reply_markup = None
+        if suggestions:
+            latest_entries_cache[uid] = suggestions
+            reply_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton(v["display"], callback_data=f"latestopen::{i}")]
+                for i, v in enumerate(suggestions)
+            ])
+        try:
+            await sent.edit_text(t(uid, "not_found"), reply_markup=reply_markup)
+        except Exception:
+            await update.message.reply_text(t(uid, "not_found"), reply_markup=reply_markup)
         return
 
     last_search_results[uid] = matches
-    await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
+    try:
+        await sent.edit_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
+    except Exception:
+        await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await perform_search(update, context, update.message.text or "")
@@ -1338,12 +1428,8 @@ async def request_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(t(uid, "request_sent"))
 
 # ---------- টাইটেল সিলেক্ট করলে (মুভি হলে কোয়ালিটি, সিরিজ হলে সিজন দেখানো) ----------
-async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = query.from_user.id
-    title = query.data.split("::", 1)[1]
-
+async def open_title_flow(query, uid, title):
+    """একটা টাইটেল সিলেক্ট হলে (সার্চ রেজাল্ট থেকে বা ক্যাটাগরি থেকে) কোয়ালিটি/সিজন দেখায়।"""
     node = db.get(title, {})
     if not node:
         await query.edit_message_text(t(uid, "content_unavailable"))
@@ -1351,10 +1437,12 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_leaf_level(node):
         # সাধারণ মুভি/গান — সরাসরি কোয়ালিটি দেখাও
-        browse_state.pop(uid, None)
+        # (টাইটেল সরাসরি callback_data-তে বসানো হয় না — লম্বা/বাংলা টাইটেলে Telegram-এর ৬৪-বাইট
+        # লিমিট ছাড়িয়ে গিয়ে বাটন নিঃশব্দে ভেঙে যেতে পারে, তাই browse_state + ইনডেক্স ব্যবহার করা হচ্ছে)
+        browse_state[uid] = {"title": title, "path": [], "children": list(node.keys()), "floor": 0, "origin": "search"}
         buttons = [
-            [InlineKeyboardButton(q, callback_data=f"get::{title}::{q}")]
-            for q in node.keys()
+            [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
+            for i, q in enumerate(node.keys())
         ]
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
@@ -1371,6 +1459,182 @@ async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"{title}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
+
+async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    title = query.data.split("::", 1)[1]
+    await open_title_flow(query, uid, title)
+
+# ---------- ক্যাটাগরি/ফোল্ডার ব্রাউজিং ----------
+def get_category_node(path):
+    node = category_tree
+    for p in path:
+        if not isinstance(node, dict) or p not in node:
+            return None
+        node = node[p]
+    return node
+
+def render_category_level(uid, path):
+    node = get_category_node(path)
+    if node is None:
+        return None, None
+
+    subfolders = [k for k in node.keys() if k != "_titles"]
+    titles = [tt for tt in node.get("_titles", []) if tt in db]
+
+    children = []
+    buttons = []
+    for sf in subfolders:
+        children.append(("folder", sf))
+        buttons.append([InlineKeyboardButton(sf, callback_data=f"catnav::{len(children) - 1}")])
+    for ti in titles:
+        children.append(("title", ti))
+        buttons.append([InlineKeyboardButton(ti, callback_data=f"catnav::{len(children) - 1}")])
+
+    category_browse_state[uid] = {"path": path, "children": children}
+
+    if path:
+        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="catback")])
+
+    label = " / ".join(path) if path else "Categories"
+    text = f"{label}\n{t(uid, 'select_option')}"
+    return text, InlineKeyboardMarkup(buttons)
+
+async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    register_user(uid, update.effective_user)
+    text, markup = render_category_level(uid, [])
+    if not text or not markup.inline_keyboard:
+        await update.message.reply_text(t(uid, "not_found"))
+        return
+    await update.message.reply_text(text, reply_markup=markup)
+
+async def category_navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    idx = int(query.data.split("::", 1)[1])
+    state = category_browse_state.get(uid)
+    if not state or idx >= len(state["children"]):
+        return
+    kind, value = state["children"][idx]
+
+    if kind == "folder":
+        new_path = state["path"] + [value]
+        text, markup = render_category_level(uid, new_path)
+        if not text:
+            await query.edit_message_text(t(uid, "content_unavailable"))
+            return
+        await query.edit_message_text(text, reply_markup=markup)
+    else:
+        await open_title_flow(query, uid, value)
+
+async def category_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    state = category_browse_state.get(uid)
+    if not state:
+        return
+    new_path = state["path"][:-1]
+    text, markup = render_category_level(uid, new_path)
+    if not text:
+        await query.edit_message_text(t(uid, "content_unavailable"))
+        return
+    await query.edit_message_text(text, reply_markup=markup)
+
+# ---------- ক্যাটাগরি/ফোল্ডার — অ্যাডমিন কমান্ড ----------
+async def add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/addcategory Avengers | MCU")
+        return
+    segments = [s.strip() for s in parts[1].split("|")]
+    if not all(segments):
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/addcategory Avengers | MCU")
+        return
+    node = category_tree
+    for seg in segments:
+        node = node.setdefault(seg, {})
+    save_state("categories", CATEGORY_FILE, category_tree)
+    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{' / '.join(segments)}")
+
+async def add_title_to_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/addtitletocategory Avengers | MCU | Avengers Endgame Hindi")
+        return
+    segments = [s.strip() for s in parts[1].split("|")]
+    if len(segments) < 2 or not all(segments):
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/addtitletocategory Avengers | MCU | Avengers Endgame Hindi")
+        return
+    folder_path, title = segments[:-1], segments[-1]
+    matched_title = find_existing_title(title)
+    if matched_title not in db:
+        await update.message.reply_text(t(uid, "admin_not_found"))
+        return
+    node = category_tree
+    for seg in folder_path:
+        node = node.setdefault(seg, {})
+    node.setdefault("_titles", [])
+    if matched_title not in node["_titles"]:
+        node["_titles"].append(matched_title)
+    save_state("categories", CATEGORY_FILE, category_tree)
+    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{' / '.join(folder_path)} - {matched_title}")
+
+async def remove_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removecategory Avengers | MCU")
+        return
+    segments = [s.strip() for s in parts[1].split("|")]
+    node = category_tree
+    for seg in segments[:-1]:
+        if not isinstance(node, dict) or seg not in node:
+            await update.message.reply_text(t(uid, "admin_not_found"))
+            return
+        node = node[seg]
+    if not isinstance(node, dict) or segments[-1] not in node:
+        await update.message.reply_text(t(uid, "admin_not_found"))
+        return
+    del node[segments[-1]]
+    save_state("categories", CATEGORY_FILE, category_tree)
+    await update.message.reply_text(f"{t(uid, 'admin_deleted')}\n{' / '.join(segments)}")
+
+async def remove_title_from_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) < 2 or "|" not in parts[1]:
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removetitlefromcategory Avengers | MCU | Avengers Endgame Hindi")
+        return
+    segments = [s.strip() for s in parts[1].split("|")]
+    folder_path, title = segments[:-1], segments[-1]
+    node = category_tree
+    for seg in folder_path:
+        if not isinstance(node, dict) or seg not in node:
+            await update.message.reply_text(t(uid, "admin_not_found"))
+            return
+        node = node[seg]
+    matched = find_existing_title(title)
+    if "_titles" not in node or matched not in node["_titles"]:
+        await update.message.reply_text(t(uid, "admin_not_found"))
+        return
+    node["_titles"].remove(matched)
+    save_state("categories", CATEGORY_FILE, category_tree)
+    await update.message.reply_text(f"{t(uid, 'admin_deleted')}\n{' / '.join(folder_path)} - {matched}")
 
 async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1494,16 +1758,23 @@ async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(t(uid, "link_not_found"))
         return
 
-    label = f"{state['title']} - {' / '.join(state['path'])} ({quality})"
+    full_name = state["title"] if not state["path"] else f"{state['title']} - {' / '.join(state['path'])}"
+    label = f"{full_name} ({quality})"
 
     hist = user_download_history.setdefault(str(uid), [])
-    hist.append({"title": f"{state['title']} - {' / '.join(state['path'])}", "t": datetime.now(timezone.utc).isoformat()})
+    hist.append({"title": full_name, "t": datetime.now(timezone.utc).isoformat()})
     del hist[:-HISTORY_LIMIT]
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
-    await query.message.reply_text(
-        f"{label}\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
-    )
+    caption = f"{label}\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
+    poster = title_posters.get(state["title"])
+    if poster:
+        try:
+            await query.message.reply_photo(photo=poster, caption=caption)
+            return
+        except Exception:
+            pass
+    await query.message.reply_text(caption)
 
 # ---------- কোয়ালিটি সিলেক্ট করলে ডাউনলোড লিংক পাঠানো (সাধারণ মুভি/গান) ----------
 async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1583,6 +1854,12 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("latest", latest))
     application.add_handler(CommandHandler("setlatest", set_latest))
+    application.add_handler(CommandHandler("setposter", set_poster))
+    application.add_handler(CommandHandler("categories", categories_command))
+    application.add_handler(CommandHandler("addcategory", add_category))
+    application.add_handler(CommandHandler("addtitletocategory", add_title_to_category))
+    application.add_handler(CommandHandler("removecategory", remove_category))
+    application.add_handler(CommandHandler("removetitlefromcategory", remove_title_from_category))
     application.add_handler(CommandHandler("removelatest", remove_latest))
     application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("help", help_command))
@@ -1597,6 +1874,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(begin_flow, pattern=r"^begin$"))
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
+    application.add_handler(CallbackQueryHandler(category_navigate, pattern=r"^catnav::"))
+    application.add_handler(CallbackQueryHandler(category_back, pattern=r"^catback$"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
     application.add_handler(CallbackQueryHandler(navigate, pattern=r"^nav::"))
     application.add_handler(CallbackQueryHandler(open_latest, pattern=r"^latestopen::"))
@@ -1604,6 +1883,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(send_file_nav, pattern=r"^getnav::"))
     application.add_handler(CallbackQueryHandler(paginate, pattern=r"^page::"))
     application.add_handler(CallbackQueryHandler(request_title, pattern=r"^request$"))
+    application.add_handler(MessageHandler(filters.PHOTO, receive_poster_photo))
     application.add_handler(MessageHandler(filters.Sticker.ALL | filters.ANIMATION, capture_loading_animation))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
     return application
