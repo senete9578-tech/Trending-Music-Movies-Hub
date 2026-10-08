@@ -80,6 +80,7 @@ title_posters = load_state("posters", POSTERS_FILE, {})   # title -> ছবি�
 CATEGORY_FILE = "categories.json"
 category_tree = load_state("categories", CATEGORY_FILE, {})   # নেস্টেড ফোল্ডার, প্রতিটা নোডে "_titles" কী-তে আসল টাইটেলের লিস্ট থাকে
 category_browse_state = {}   # user_id -> {"path": [...], "children": [("folder"|"title", name), ...]}
+category_return_path = {}    # user_id -> category path to return to when Back is pressed from an opened title
 awaiting_poster = {}   # admin এখন কোন টাইটেলের জন্য ছবি পাঠাবে (ট্রানজিয়েন্ট)
 user_download_history = load_state("download_history", DOWNLOAD_HISTORY_FILE, {})   # str(user_id) -> [title, ...] (সর্বশেষ কয়েকটা)
 HISTORY_LIMIT = 15
@@ -431,10 +432,48 @@ def t(user_id: int, key: str) -> str:
     lang = get_lang(user_id)
     return TEXTS.get(lang, TEXTS["en"])[key]
 
+def _normalize_label(s):
+    return re.sub(r"[\s\-_]+", " ", s.strip().lower()).strip()
+
+def find_key_ci(node, key):
+    if not isinstance(node, dict):
+        return None
+    normalized = _normalize_label(key)
+    for k in node.keys():
+        if _normalize_label(k) == normalized:
+            return k
+    return None
+
+def resolve_title_and_path(segments):
+    """segments-এর ভেতর কোথায় একটা আসল টাইটেল শুরু হচ্ছে খুঁজে বের করে, তারপর বাকিটুকু
+    সেই টাইটেলের ভেতরের নেস্টেড পাথ (যেমন Part 2) হিসেবে মেলানোর চেষ্টা করে।
+    রিটার্ন করে (folder_path, matched_title, nested_path) অথবা None।"""
+    for i, seg in enumerate(segments):
+        matched = find_existing_title(seg)
+        if matched in db:
+            node = db[matched]
+            resolved_path = []
+            ok = True
+            for label in segments[i + 1:]:
+                key = find_key_ci(node, label)
+                if key is None:
+                    ok = False
+                    break
+                resolved_path.append(key)
+                node = node[key]
+            if ok:
+                return list(segments[:i]), matched, resolved_path
+    return None
+
 def find_existing_title(title: str) -> str:
     normalized = title.strip().lower()
     for existing in db.keys():
         if existing.strip().lower() == normalized:
+            return existing
+    # হাইফেন/আন্ডারস্কোর/এক্সট্রা স্পেসের পার্থক্য উপেক্ষা করে আরেকবার চেষ্টা
+    loose = re.sub(r"[\s\-_]+", " ", normalized)
+    for existing in db.keys():
+        if re.sub(r"[\s\-_]+", " ", existing.strip().lower()) == loose:
             return existing
     return title
 
@@ -1254,19 +1293,10 @@ async def latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text(t(uid, "results"), reply_markup=InlineKeyboardMarkup(buttons))
 
-async def open_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    uid = query.from_user.id
-    idx = int(query.data.split("::", 1)[1])
-    entries = latest_entries_cache.get(uid)
-    if not entries or idx >= len(entries):
-        return
-
-    info = entries[idx]
-    title = info["title"]
-    path = list(info.get("path", []))
-
+async def open_nested_entry(query, uid, title, path, origin="latest"):
+    """টাইটেলের ভেতরের একটা নির্দিষ্ট পাথ (যেমন Part 2) সরাসরি খুলে দেখায় —
+    /latest আর ক্যাটাগরি, দুটোতেই ব্যবহার হয়।"""
+    path = list(path or [])
     node = db.get(title, {})
     for key in path:
         node = node.get(key, {})
@@ -1275,7 +1305,7 @@ async def open_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     label = title if not path else f"{title} - {' / '.join(path)}"
-    browse_state[uid] = {"title": title, "path": path, "children": list(node.keys()), "floor": len(path), "origin": "latest"}
+    browse_state[uid] = {"title": title, "path": path, "children": list(node.keys()), "floor": len(path), "origin": origin}
 
     if is_leaf_level(node):
         buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(node.keys())]
@@ -1286,6 +1316,17 @@ async def open_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
 
     await query.edit_message_text(f"{label}\n{t(uid, option_key)}", reply_markup=InlineKeyboardMarkup(buttons))
+
+async def open_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    idx = int(query.data.split("::", 1)[1])
+    entries = latest_entries_cache.get(uid)
+    if not entries or idx >= len(entries):
+        return
+    info = entries[idx]
+    await open_nested_entry(query, uid, info["title"], info.get("path", []), origin="latest")
 
 # ---------- সার্চ ----------
 async def capture_loading_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1378,14 +1419,18 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
             )
         except Exception:
             pass
-        suggestions = get_latest_entries(7)
-        reply_markup = None
+        suggestions = get_latest_entries(5)
+        rows = []
         if suggestions:
             latest_entries_cache[uid] = suggestions
-            reply_markup = InlineKeyboardMarkup([
+            rows.extend([
                 [InlineKeyboardButton(v["display"], callback_data=f"latestopen::{i}")]
                 for i, v in enumerate(suggestions)
             ])
+        cat_text, cat_markup = render_category_level(uid, [])
+        if cat_text and cat_markup.inline_keyboard:
+            rows.extend(cat_markup.inline_keyboard)
+        reply_markup = InlineKeyboardMarkup(rows) if rows else None
         try:
             await sent.edit_text(t(uid, "not_found"), reply_markup=reply_markup)
         except Exception:
@@ -1482,16 +1527,23 @@ def render_category_level(uid, path):
         return None, None
 
     subfolders = [k for k in node.keys() if k != "_titles"]
-    titles = [tt for tt in node.get("_titles", []) if tt in db]
+    raw_titles = node.get("_titles", [])
+    titles = []
+    for rt in raw_titles:
+        if isinstance(rt, dict):
+            if rt.get("title") in db:
+                titles.append(rt)
+        elif rt in db:
+            titles.append({"title": rt, "path": [], "display": rt})
 
     children = []
     buttons = []
     for sf in subfolders:
-        children.append(("folder", sf))
+        children.append(("folder", sf, None))
         buttons.append([InlineKeyboardButton(sf, callback_data=f"catnav::{len(children) - 1}")])
     for ti in titles:
-        children.append(("title", ti))
-        buttons.append([InlineKeyboardButton(ti, callback_data=f"catnav::{len(children) - 1}")])
+        children.append(("title", ti["title"], ti.get("path", [])))
+        buttons.append([InlineKeyboardButton(ti.get("display", ti["title"]), callback_data=f"catnav::{len(children) - 1}")])
 
     category_browse_state[uid] = {"path": path, "children": children}
 
@@ -1519,7 +1571,7 @@ async def category_navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = category_browse_state.get(uid)
     if not state or idx >= len(state["children"]):
         return
-    kind, value = state["children"][idx]
+    kind, value, extra_path = state["children"][idx]
 
     if kind == "folder":
         new_path = state["path"] + [value]
@@ -1529,7 +1581,8 @@ async def category_navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await query.edit_message_text(text, reply_markup=markup)
     else:
-        await open_title_flow(query, uid, value)
+        category_return_path[uid] = state["path"]
+        await open_nested_entry(query, uid, value, extra_path, origin="category")
 
 async def category_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1570,25 +1623,42 @@ async def add_title_to_category(update: Update, context: ContextTypes.DEFAULT_TY
     uid = update.effective_user.id
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or "|" not in parts[1]:
-        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/addtitletocategory Avengers | MCU | Avengers Endgame Hindi")
+        await update.message.reply_text(
+            f"{t(uid, 'admin_format_error')}\n"
+            "/addtitletocategory Folder | ... | Title\n"
+            "or (for a part inside a title, e.g. Part 2):\n"
+            "/addtitletocategory Folder | ... | Title | Part 2"
+        )
         return
     segments = [s.strip() for s in parts[1].split("|")]
     if len(segments) < 2 or not all(segments):
-        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/addtitletocategory Avengers | MCU | Avengers Endgame Hindi")
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/addtitletocategory Folder | ... | Title")
         return
-    folder_path, title = segments[:-1], segments[-1]
-    matched_title = find_existing_title(title)
-    if matched_title not in db:
+
+    result = resolve_title_and_path(segments)
+    if result is None:
         await update.message.reply_text(t(uid, "admin_not_found"))
         return
+    folder_path, matched_title, nested_path = result
+    if not folder_path:
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\nNeed at least one folder name before the title.")
+        return
+
+    display = matched_title if not nested_path else f"{matched_title} - {' / '.join(nested_path)}"
+    entry = {"title": matched_title, "path": nested_path, "display": display}
+
     node = category_tree
     for seg in folder_path:
         node = node.setdefault(seg, {})
     node.setdefault("_titles", [])
-    if matched_title not in node["_titles"]:
-        node["_titles"].append(matched_title)
+    already = any(
+        isinstance(e, dict) and e.get("title") == matched_title and e.get("path", []) == nested_path
+        for e in node["_titles"]
+    )
+    if not already:
+        node["_titles"].append(entry)
     save_state("categories", CATEGORY_FILE, category_tree)
-    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{' / '.join(folder_path)} - {matched_title}")
+    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{' / '.join(folder_path)} - {display}")
 
 async def remove_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1618,23 +1688,39 @@ async def remove_title_from_category(update: Update, context: ContextTypes.DEFAU
     uid = update.effective_user.id
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or "|" not in parts[1]:
-        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removetitlefromcategory Avengers | MCU | Avengers Endgame Hindi")
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/removetitlefromcategory Folder | ... | Title")
         return
     segments = [s.strip() for s in parts[1].split("|")]
-    folder_path, title = segments[:-1], segments[-1]
+
+    result = resolve_title_and_path(segments)
+    if result is None:
+        await update.message.reply_text(t(uid, "admin_not_found"))
+        return
+    folder_path, matched_title, nested_path = result
+
     node = category_tree
     for seg in folder_path:
         if not isinstance(node, dict) or seg not in node:
             await update.message.reply_text(t(uid, "admin_not_found"))
             return
         node = node[seg]
-    matched = find_existing_title(title)
-    if "_titles" not in node or matched not in node["_titles"]:
+
+    titles_list = node.get("_titles", [])
+    match_idx = None
+    for i, e in enumerate(titles_list):
+        if isinstance(e, dict) and e.get("title") == matched_title and e.get("path", []) == nested_path:
+            match_idx = i
+            break
+        if not isinstance(e, dict) and e == matched_title and not nested_path:
+            match_idx = i
+            break
+    if match_idx is None:
         await update.message.reply_text(t(uid, "admin_not_found"))
         return
-    node["_titles"].remove(matched)
+    display = titles_list[match_idx]["display"] if isinstance(titles_list[match_idx], dict) else titles_list[match_idx]
+    del titles_list[match_idx]
     save_state("categories", CATEGORY_FILE, category_tree)
-    await update.message.reply_text(f"{t(uid, 'admin_deleted')}\n{' / '.join(folder_path)} - {matched}")
+    await update.message.reply_text(f"{t(uid, 'admin_deleted')}\n{' / '.join(folder_path)} - {display}")
 
 async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1724,6 +1810,16 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for i, v in enumerate(entries)
             ]
             await query.edit_message_text(t(uid, "results"), reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            await query.edit_message_text(t(uid, "not_found"))
+        return
+
+    if state and state.get("origin") == "category":
+        browse_state.pop(uid, None)
+        cat_path = category_return_path.get(uid, [])
+        text, markup = render_category_level(uid, cat_path)
+        if text:
+            await query.edit_message_text(text, reply_markup=markup)
         else:
             await query.edit_message_text(t(uid, "not_found"))
         return
