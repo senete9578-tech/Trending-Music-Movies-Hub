@@ -33,9 +33,17 @@ def _regroup_rows(rows):
     flush()
     return out
 
+def _fit(btn, limit=22):
+    txt = btn.text
+    if len(txt) <= limit:
+        return btn
+    return InlineKeyboardButton(txt[:limit - 1].rstrip() + "…", callback_data=btn.callback_data, url=btn.url)
+
 class InlineKeyboardMarkup(_OrigMarkup):
     def __init__(self, inline_keyboard, *args, **kwargs):
-        super().__init__(_regroup_rows(inline_keyboard), *args, **kwargs)
+        rows = _regroup_rows(inline_keyboard)
+        rows = [[_fit(b) for b in r] if len(r) == 2 else r for r in rows]
+        super().__init__(rows, *args, **kwargs)
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -505,27 +513,36 @@ def is_leaf_level(node: dict) -> bool:
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
+def _squash(s):
+    return re.sub(r"[^0-9a-z\u0980-\u09ff\u0900-\u097f]+", "", s.lower())
+
 def fuzzy_search(query: str, titles, limit: int = 200):
     query = query.strip().lower()
-    if not query:
+    titles = list(titles)
+    if not query or not titles:
         return []
 
-    exact = [t for t in titles if query in t.lower()]
+    sq = _squash(query)
+    exact = [t for t in titles if query in t.lower() or (sq and sq in _squash(t))]
     if exact:
-        exact.sort(key=natural_sort_key)
+        exact.sort(key=lambda x: (0 if x.lower().startswith(query) else 1, natural_sort_key(x)))
         return exact[:limit]
 
     scored = []
     for title in titles:
-        title_lower = title.lower()
-        best_ratio = difflib.SequenceMatcher(None, query, title_lower).ratio()
-        for word in title_lower.split():
-            best_ratio = max(best_ratio, difflib.SequenceMatcher(None, query, word).ratio())
-        if best_ratio >= 0.6:
-            scored.append((best_ratio, title))
-
+        tl = title.lower()
+        best = difflib.SequenceMatcher(None, query, tl).ratio()
+        for word in re.split(r"[^0-9a-z\u0980-\u09ff\u0900-\u097f]+", tl):
+            if word:
+                best = max(best, difflib.SequenceMatcher(None, query, word).ratio())
+                if word.startswith(query[:2]) and len(query) >= 2:
+                    best += 0.1
+        scored.append((best, title))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [title for _, title in scored[:limit]]
+    good = [t for r, t in scored if r >= 0.5]
+    if good:
+        return good[:limit]
+    return [t for _, t in scored[:6]]   # কিছু না মিললেও সবচেয়ে কাছের কয়েকটা দেখাবে
 
 def grid_rows(flat_buttons, per_row=2):
     """বাটনগুলোকে একটা করে সারির বদলে দুটো করে সারিতে (গ্রিড) সাজায়।"""
@@ -1442,15 +1459,6 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     del hist[:-HISTORY_LIMIT]
     save_state("search_history", SEARCH_HISTORY_FILE, user_search_history)
 
-    frames = random.choice(LOADING_FRAME_SETS)
-    sent = await update.message.reply_text(frames[0], parse_mode="Markdown")
-    for frame in frames[1:]:
-        try:
-            await asyncio.sleep(0.4)
-            await sent.edit_text(frame, parse_mode="Markdown")
-        except Exception:
-            pass
-
     matches = fuzzy_search(raw_query, db.keys())
 
     if not matches:
@@ -1471,17 +1479,11 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
             pass
         cat_text, cat_markup = render_category_level(uid, [])
         reply_markup = cat_markup if (cat_text and cat_markup.inline_keyboard) else None
-        try:
-            await sent.edit_text(t(uid, "not_found"), reply_markup=reply_markup)
-        except Exception:
-            await update.message.reply_text(t(uid, "not_found"), reply_markup=reply_markup)
+        await update.message.reply_text(t(uid, "not_found"), reply_markup=reply_markup)
         return
 
     last_search_results[uid] = matches
-    try:
-        await sent.edit_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
-    except Exception:
-        await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
+    await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await perform_search(update, context, update.message.text or "")
