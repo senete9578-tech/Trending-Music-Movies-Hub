@@ -1471,9 +1471,18 @@ async def notify_fulfilled_requests(context: ContextTypes.DEFAULT_TYPE, new_titl
     """নতুন কোনো টাইটেল/সিরিজ যোগ হলে, আগে যারা এই নামে খুঁজে না পেয়ে রিকোয়েস্ট করেছিল
     তাদের সবাইকে নোটিফাই করে, তারপর সেই রিকোয়েস্টগুলো তালিকা থেকে সরিয়ে দেয়।"""
     fulfilled_keys = []
+    notified = set()   # একই ইউজার একই টাইটেলের জন্য মাত্র একবার নোটিফিকেশন পাবে
+    new_sq = _squash(new_title)
     for query_key, user_ids in list(pending_requests.items()):
-        if fuzzy_search(query_key, [new_title]):
+        qsq = _squash(query_key)
+        words = [w for w in re.split(r"[^0-9a-z]+", new_title.lower()) if w]
+        strict = bool(qsq) and (qsq in new_sq or any(
+            difflib.SequenceMatcher(None, query_key.lower(), w).ratio() >= 0.8 for w in words))
+        if strict:
             for req_uid in user_ids:
+                if req_uid in notified:
+                    continue
+                notified.add(req_uid)
                 try:
                     await context.bot.send_message(
                         chat_id=req_uid,
@@ -1744,9 +1753,34 @@ async def add_title_to_category(update: Update, context: ContextTypes.DEFAULT_TY
     if already:
         await update.message.reply_text(f"{t(uid, 'admin_already')}\n{' / '.join(folder_path)} - {display}")
         return
+
+    # একই টাইটেল (একই সিজন/পার্টসহ) অন্য ফোল্ডারে থাকলে সেখান থেকে সরিয়ে নতুন জায়গায় আনা হবে
+    moved_from = []
+    def _purge(tree, trail):
+        for key, val in list(tree.items()):
+            if key == "_titles":
+                keep = []
+                for e in val:
+                    if isinstance(e, dict) and e.get("title") == matched_title and e.get("path", []) == nested_path and trail != folder_path:
+                        moved_from.append(" / ".join(trail))
+                    else:
+                        keep.append(e)
+                tree["_titles"] = keep
+            elif isinstance(val, dict):
+                _purge(val, trail + [key])
+    _purge(category_tree, [])
+
+    node = category_tree
+    for seg in folder_path:
+        node = node.setdefault(seg, {})
+    node.setdefault("_titles", [])
     node["_titles"].append(entry)
     save_state("categories", CATEGORY_FILE, category_tree)
-    await update.message.reply_text(f"{t(uid, 'admin_added')}\n{' / '.join(folder_path)} - {display}")
+    if moved_from:
+        await update.message.reply_text(
+            f"{t(uid, 'admin_updated')}\n{display}\n{' | '.join(moved_from)}  ->  {' / '.join(folder_path)}")
+    else:
+        await update.message.reply_text(f"{t(uid, 'admin_added')}\n{' / '.join(folder_path)} - {display}")
 
 # ---------- এক কমান্ডে পুরো ক্যাটাগরি ট্রি মুছে ফেলা / নতুন করে বানানো ----------
 # ফরম্যাট: (ফোল্ডারের পথ, [(দেখানোর নাম বা None, [টাইটেল, পার্ট/সিজন, ...]), ...])
