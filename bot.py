@@ -7,11 +7,35 @@ import re
 import random
 from datetime import datetime, timezone
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup as _OrigMarkup, BotCommand, ForceReply
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters, TypeHandler
+    ContextTypes, filters, TypeHandler, ApplicationHandlerStop
 )
+
+_SINGLE_ROW_KEEP = ("navback", "catback", "begin", "request", "page::", "reset_")
+
+def _regroup_rows(rows):
+    """পাশাপাশি থাকা একক-বাটনের সারিগুলোকে দুটো করে এক সারিতে বসায় (ব্যাক/পেজ বাটন আলাদা থাকে)।"""
+    out, run = [], []
+    def flush():
+        for i in range(0, len(run), 2):
+            out.append(list(run[i:i + 2]))
+        run.clear()
+    for row in rows:
+        row = list(row)
+        cb = getattr(row[0], "callback_data", None) if len(row) == 1 else None
+        if len(row) == 1 and isinstance(cb, str) and not cb.startswith(_SINGLE_ROW_KEEP):
+            run.append(row[0])
+        else:
+            flush()
+            out.append(row)
+    flush()
+    return out
+
+class InlineKeyboardMarkup(_OrigMarkup):
+    def __init__(self, inline_keyboard, *args, **kwargs):
+        super().__init__(_regroup_rows(inline_keyboard), *args, **kwargs)
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -96,6 +120,8 @@ LOADING_FRAME_SETS = [
 # শুধু এই সেশনে চালু থাকা, রিস্টার্টে মুছে যাওয়া অস্থায়ী ডাটা
 last_search_results = {}   # user_id -> [title, ...]  (পেজিনেশনের জন্য)
 pending_request = {}       # user_id -> query text     (রিকোয়েস্ট বাটনের জন্য)
+pending_feedback = {}      # user_id -> "feedback" | "support"  (পরের টেক্সট মেসেজ অ্যাডমিনের কাছে যাবে)
+typing_tasks = {}          # chat_id -> asyncio.Task    (উত্তর না আসা পর্যন্ত টানা টাইপিং অ্যানিমেশন)
 browse_state = {}          # user_id -> {"title":..., "path":[...], "children":[...]}  (সিজন/এপিসোড নেভিগেশনের জন্য)
 
 def register_user(user_id: int, tg_user=None):
@@ -606,30 +632,46 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(uid, update.effective_user)
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
-        await update.message.reply_text("Send it like: /feedback your message here")
+        pending_feedback[uid] = "feedback"
+        await update.message.reply_text(
+            "Write your feedback or suggestion:",
+            reply_markup=ForceReply(selective=True, input_field_placeholder="Type your feedback here")
+        )
         return
+    await deliver_feedback(update, context, "feedback", parts[1].strip())
+
+async def deliver_feedback(update, context, kind, text):
+    uid = update.effective_user.id
     user = update.effective_user
     name = f"@{user.username}" if user.username else (user.full_name or str(uid))
+    label = "Feedback" if kind == "feedback" else "Support request"
     try:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Feedback from {name} (id: {uid}):\n{parts[1].strip()}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"{label} from {name} (id: {uid}):\n{text}")
     except Exception:
         pass
-    await update.message.reply_text("Thanks, your feedback has been sent.")
+    await update.message.reply_text("Thanks, your feedback has been sent." if kind == "feedback" else "Thanks, your message has been sent to support.")
+
+async def capture_pending_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/feedback বা /support চাপার পর ইউজারের পরের টেক্সট মেসেজটা অ্যাডমিনের কাছে যায় (সার্চ হিসেবে নয়)।"""
+    uid = update.effective_user.id
+    kind = pending_feedback.pop(uid, None)
+    if kind and update.message and update.message.text:
+        await deliver_feedback(update, context, kind, update.message.text.strip())
+        await stop_typing(update, context)
+        raise ApplicationHandlerStop
 
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     register_user(uid, update.effective_user)
     parts = (update.message.text or "").split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
-        await update.message.reply_text("Send it like: /support describe your issue here")
+        pending_feedback[uid] = "support"
+        await update.message.reply_text(
+            "Describe your problem:",
+            reply_markup=ForceReply(selective=True, input_field_placeholder="Type your message here")
+        )
         return
-    user = update.effective_user
-    name = f"@{user.username}" if user.username else (user.full_name or str(uid))
-    try:
-        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Support request from {name} (id: {uid}):\n{parts[1].strip()}")
-    except Exception:
-        pass
-    await update.message.reply_text("Thanks, your message has been sent to support.")
+    await deliver_feedback(update, context, "support", parts[1].strip())
 
 # ---------- রিসেট (ইউজারের ভাষা/সার্চ স্টেট রিসেট — চ্যাটের মেসেজ ডিলিট করে না, বট কখনো ইউজারের নিজের পাঠানো মেসেজ মুছতে পারে না) ----------
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -653,11 +695,22 @@ async def reset_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_search_results.pop(uid, None)
         pending_request.pop(uid, None)
         browse_state.pop(uid, None)
+        pending_feedback.pop(uid, None)
+        chat_id = query.message.chat_id
+        top_id = query.message.message_id
+        # চ্যাটের সব মেসেজ (ইউজারের পাঠানো + বটের) মুছে ফেলা — প্রাইভেট চ্যাটে ৪৮ ঘণ্টার মধ্যের মেসেজ মোছা যায়
+        low = max(1, top_id - 3000)
+        ids = list(range(top_id, low - 1, -1))
+        for i in range(0, len(ids), 100):
+            try:
+                await context.bot.delete_messages(chat_id=chat_id, message_ids=ids[i:i + 100])
+            except Exception:
+                pass
         buttons = [
             [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
             for code, name in LANGUAGES.items()
         ]
-        await query.edit_message_text("Reset done. Select your language:", reply_markup=InlineKeyboardMarkup(buttons))
+        await context.bot.send_message(chat_id=chat_id, text="Select your language:", reply_markup=InlineKeyboardMarkup(buttons))
     else:
         await query.edit_message_text("Cancelled.")
 
@@ -1729,16 +1782,16 @@ DEFAULT_CATEGORY_PLAN = [
         (None, ["Red 2021 Hindi"]),
     ]),
     (["Web Series", "Daredevil"], [
-        ("Daredevil - Season 1", ["Daredevil Hindi", "Season 1", "Episode 1 to 13"]),
-        ("Daredevil - Season 2", ["Daredevil Hindi", "Season 2", "Episode 1 to 13"]),
-        ("Daredevil - Season 3", ["Daredevil Hindi", "Season 3", "Episode 1 to 13"]),
+        ("Daredevil - Season 1", ["Daredevil Hindi", "Season 1"]),
+        ("Daredevil - Season 2", ["Daredevil Hindi", "Season 2"]),
+        ("Daredevil - Season 3", ["Daredevil Hindi", "Season 3"]),
         ("Daredevil Final", ["Daredevil Hindi", "Daredevil Final Hindi"]),
     ]),
     (["Web Series", "The Punisher"], [
         (None, ["The Punisher Hindi"]),
     ]),
     (["Web Series", "Doctor Stranger"], [
-        ("Doctor Stranger - Season 1", ["Doctor Stranger Hindi", "Season 1", "Episode 1 to 20"]),
+        ("Doctor Stranger - Season 1", ["Doctor Stranger Hindi", "Season 1"]),
     ]),
     (["Songs", "Hindi Songs"], [
         ("Apna Bana Le", ["Apna Bana Le"]),
@@ -2114,15 +2167,40 @@ async def post_init(application: Application):
 async def show_typing(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """প্রতিটা মেসেজ/কমান্ডের শুরুতে 'টাইপিং...' ইন্ডিকেটর দেখায় — ভাষা-নিরপেক্ষ,
     কোল্ড-স্টার্ট বা ধীরগতির সময় ইউজারকে বুঝিয়ে রাখে যে কিছু একটা হচ্ছে।"""
-    try:
-        if update.effective_chat:
-            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    except Exception:
-        pass
+    chat = update.effective_chat
+    if not chat:
+        return
+    old = typing_tasks.pop(chat.id, None)
+    if old:
+        old.cancel()
+
+    async def _loop(chat_id):
+        # টেলিগ্রামের টাইপিং ৫ সেকেন্ডে নিভে যায়, তাই ৪ সেকেন্ড পরপর আবার পাঠাই — সর্বোচ্চ ২ মিনিট
+        try:
+            for _ in range(30):
+                try:
+                    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+                except Exception:
+                    pass
+                await asyncio.sleep(4)
+        except asyncio.CancelledError:
+            pass
+
+    typing_tasks[chat.id] = asyncio.create_task(_loop(chat.id))
+
+async def stop_typing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """হ্যান্ডলার শেষ হলে (বট উত্তর দেওয়ার পর) অ্যানিমেশন থামায়।"""
+    chat = update.effective_chat
+    if chat:
+        task = typing_tasks.pop(chat.id, None)
+        if task:
+            task.cancel()
 
 def build_application() -> Application:
     application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
-    application.add_handler(TypeHandler(Update, show_typing), group=-1)
+    application.add_handler(TypeHandler(Update, show_typing), group=-3)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, capture_pending_text), group=-2)
+    application.add_handler(TypeHandler(Update, stop_typing), group=5)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
