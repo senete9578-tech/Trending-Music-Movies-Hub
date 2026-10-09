@@ -37,6 +37,12 @@ def _fit(btn, limit=22):
     txt = btn.text
     if len(txt) <= limit:
         return btn
+    parts = txt.split(" - ")
+    while len(parts) > 1 and len(" - ".join(parts)) > limit:
+        parts.pop(0)   # লম্বা নামে আগের অংশ বাদ দিয়ে শেষের অংশ (Season 1 ইত্যাদি) রাখে
+    txt = " - ".join(parts)
+    if len(txt) <= limit:
+        return InlineKeyboardButton(txt, callback_data=btn.callback_data, url=btn.url)
     return InlineKeyboardButton(txt[:limit - 1].rstrip() + "…", callback_data=btn.callback_data, url=btn.url)
 
 class InlineKeyboardMarkup(_OrigMarkup):
@@ -1585,7 +1591,10 @@ def render_category_level(uid, path):
         flat.append(InlineKeyboardButton(sf, callback_data=f"catnav::{len(children) - 1}"))
     for ti in titles:
         children.append(("title", ti["title"], ti.get("path", [])))
-        flat.append(InlineKeyboardButton(ti.get("display", ti["title"]), callback_data=f"catnav::{len(children) - 1}"))
+        label = ti.get("display", ti["title"])
+        if ti.get("path") and label.startswith(ti["title"] + " - "):
+            label = " - ".join(ti["path"])   # ফোল্ডারের ভেতরে শুধু Season 1 / Part-1 দেখাবে, পুরো নাম নয়
+        flat.append(InlineKeyboardButton(label, callback_data=f"catnav::{len(children) - 1}"))
 
     category_browse_state[uid] = {"path": path, "children": children}
 
@@ -1687,7 +1696,7 @@ async def add_title_to_category(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(f"{t(uid, 'admin_format_error')}\nNeed at least one folder name before the title.")
         return
 
-    display = matched_title if not nested_path else f"{matched_title} - {' / '.join(nested_path)}"
+    display = matched_title if not nested_path else " - ".join(nested_path)
     entry = {"title": matched_title, "path": nested_path, "display": display}
 
     node = category_tree
