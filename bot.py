@@ -176,6 +176,8 @@ TEXTS = {
         "thank_you": "Thank you for using the bot! Enjoy watching.",
         "select_option": "Select:",
         "admin_added": "Added ✅",
+        "admin_already": "Already added - nothing changed ✅",
+        "admin_updated": "Updated with the new link ✅",
         "admin_deleted": "Deleted ✅",
         "admin_migrated": "Migrated ✅",
         "admin_fixed": "Fixed ✅",
@@ -218,6 +220,8 @@ TEXTS = {
         "thank_you": "बॉट इस्तेमाल करने के लिए धन्यवाद! देखने का आनंद लें।",
         "select_option": "चुनें:",
         "admin_added": "जोड़ दिया गया ✅",
+        "admin_already": "पहले से जोड़ा हुआ है, कोई बदलाव नहीं ✅",
+        "admin_updated": "नए लिंक से अपडेट किया गया ✅",
         "admin_deleted": "हटा दिया गया ✅",
         "admin_migrated": "माइग्रेट हो गया ✅",
         "admin_fixed": "ठीक कर दिया गया ✅",
@@ -260,6 +264,8 @@ TEXTS = {
         "thank_you": "বট ব্যবহার করার জন্য ধন্যবাদ! উপভোগ করো।",
         "select_option": "সিলেক্ট করো:",
         "admin_added": "যোগ হয়েছে ✅",
+        "admin_already": "আগে থেকেই যোগ করা আছে, কিছু বদলায়নি ✅",
+        "admin_updated": "নতুন লিংক দিয়ে আপডেট হয়েছে ✅",
         "admin_deleted": "ডিলিট হয়েছে ✅",
         "admin_migrated": "মাইগ্রেট হয়েছে ✅",
         "admin_fixed": "ঠিক করা হয়েছে ✅",
@@ -302,6 +308,8 @@ TEXTS = {
         "thank_you": "பாட்டைப் பயன்படுத்தியதற்கு நன்றி! பார்த்து மகிழுங்கள்.",
         "select_option": "தேர்ந்தெடுக்கவும்:",
         "admin_added": "சேர்க்கப்பட்டது ✅",
+        "admin_already": "ஏற்கனவே சேர்க்கப்பட்டுள்ளது, மாற்றம் இல்லை ✅",
+        "admin_updated": "புதிய இணைப்புடன் புதுப்பிக்கப்பட்டது ✅",
         "admin_deleted": "நீக்கப்பட்டது ✅",
         "admin_migrated": "மாற்றப்பட்டது ✅",
         "admin_fixed": "சரி செய்யப்பட்டது ✅",
@@ -344,6 +352,8 @@ TEXTS = {
         "thank_you": "బాట్ ఉపయోగించినందుకు ధన్యవాదాలు! ఆనందించండి.",
         "select_option": "ఎంచుకోండి:",
         "admin_added": "జోడించబడింది ✅",
+        "admin_already": "ఇప్పటికే జోడించబడింది, మార్పు లేదు ✅",
+        "admin_updated": "కొత్త లింక్‌తో నవీకరించబడింది ✅",
         "admin_deleted": "తొలగించబడింది ✅",
         "admin_migrated": "మైగ్రేట్ చేయబడింది ✅",
         "admin_fixed": "సరిచేయబడింది ✅",
@@ -386,6 +396,8 @@ TEXTS = {
         "thank_you": "बॉट वापरल्याबद्दल धन्यवाद! आनंद घ्या.",
         "select_option": "निवडा:",
         "admin_added": "जोडले गेले ✅",
+        "admin_already": "आधीच जोडलेले आहे, बदल नाही ✅",
+        "admin_updated": "नवीन लिंकने अपडेट केले ✅",
         "admin_deleted": "हटवले गेले ✅",
         "admin_migrated": "माइग्रेट केले गेले ✅",
         "admin_fixed": "दुरुस्त केले गेले ✅",
@@ -428,6 +440,8 @@ TEXTS = {
         "thank_you": "બોટ વાપરવા બદલ આભાર! માણો.",
         "select_option": "પસંદ કરો:",
         "admin_added": "ઉમેરવામાં આવ્યું ✅",
+        "admin_already": "પહેલેથી ઉમેરેલું છે, કોઈ ફેરફાર નથી ✅",
+        "admin_updated": "નવી લિંક સાથે અપડેટ કર્યું ✅",
         "admin_deleted": "ડિલીટ કરવામાં આવ્યું ✅",
         "admin_migrated": "માઇગ્રેટ કરવામાં આવ્યું ✅",
         "admin_fixed": "ઠીક કરવામાં આવ્યું ✅",
@@ -462,7 +476,7 @@ def get_lang(user_id: int) -> str:
 
 def t(user_id: int, key: str) -> str:
     lang = get_lang(user_id)
-    return TEXTS.get(lang, TEXTS["en"])[key]
+    return TEXTS.get(lang, TEXTS["en"]).get(key) or TEXTS["en"][key]
 
 def _normalize_label(s):
     return re.sub(r"[\s\-_]+", " ", s.strip().lower()).strip()
@@ -760,6 +774,11 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     title, quality, link = segments
     existing_title = find_existing_title(title)
+    old = db.get(existing_title, {}).get(quality) if isinstance(db.get(existing_title), dict) else None
+    if old == link:
+        await update.message.reply_text(f"{t(uid, 'admin_already')}\n{t(uid, 'title_label')} {existing_title}\n{t(uid, 'quality_label')} {quality}")
+        return
+    status_key = "admin_updated" if old else "admin_added"
     db.setdefault(existing_title, {})[quality] = link
     save_state("content", DB_FILE, db)
 
@@ -768,7 +787,7 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await notify_fulfilled_requests(context, existing_title)
 
     await update.message.reply_text(
-        f"{t(uid, 'admin_added')}\n{t(uid, 'title_label')} {existing_title}\n{t(uid, 'quality_label')} {quality}"
+        f"{t(uid, status_key)}\n{t(uid, 'title_label')} {existing_title}\n{t(uid, 'quality_label')} {quality}"
     )
 
 async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -796,6 +815,16 @@ async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     title, season, episode, quality, link = segments
     existing_title = find_existing_title(title)
+    try:
+        old = db[existing_title][season][episode][quality]
+    except (KeyError, TypeError):
+        old = None
+    if old == link:
+        await update.message.reply_text(
+            f"{t(uid, 'admin_already')}\n{t(uid, 'title_label')} {existing_title}\n"
+            f"{t(uid, 'season_label')} {season}\n{t(uid, 'episode_label')} {episode}\n{t(uid, 'quality_label')} {quality}")
+        return
+    status_key = "admin_updated" if old else "admin_added"
     db.setdefault(existing_title, {})
     db[existing_title].setdefault(season, {})
     db[existing_title][season].setdefault(episode, {})
@@ -807,7 +836,7 @@ async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await notify_fulfilled_requests(context, existing_title)
 
     await update.message.reply_text(
-        f"{t(uid, 'admin_added')}\n"
+        f"{t(uid, status_key)}\n"
         f"{t(uid, 'title_label')} {existing_title}\n"
         f"{t(uid, 'season_label')} {season}\n"
         f"{t(uid, 'episode_label')} {episode}\n"
@@ -846,6 +875,11 @@ async def add_movie_in_series(update: Update, context: ContextTypes.DEFAULT_TYPE
     if db[existing_title][label] and not is_leaf_level(db[existing_title][label]):
         await update.message.reply_text(t(uid, "admin_conflict"))
         return
+    old = db[existing_title][label].get(quality)
+    if old == link:
+        await update.message.reply_text(f"{t(uid, 'admin_already')}\n{t(uid, 'title_label')} {existing_title}\n{label}\n{t(uid, 'quality_label')} {quality}")
+        return
+    status_key = "admin_updated" if old else "admin_added"
     db[existing_title][label][quality] = link
     save_state("content", DB_FILE, db)
 
@@ -854,7 +888,7 @@ async def add_movie_in_series(update: Update, context: ContextTypes.DEFAULT_TYPE
     await notify_fulfilled_requests(context, existing_title)
 
     await update.message.reply_text(
-        f"{t(uid, 'admin_added')}\n"
+        f"{t(uid, status_key)}\n"
         f"{t(uid, 'title_label')} {existing_title}\n"
         f"{label}\n"
         f"{t(uid, 'quality_label')} {quality}"
@@ -1707,8 +1741,10 @@ async def add_title_to_category(update: Update, context: ContextTypes.DEFAULT_TY
         isinstance(e, dict) and e.get("title") == matched_title and e.get("path", []) == nested_path
         for e in node["_titles"]
     )
-    if not already:
-        node["_titles"].append(entry)
+    if already:
+        await update.message.reply_text(f"{t(uid, 'admin_already')}\n{' / '.join(folder_path)} - {display}")
+        return
+    node["_titles"].append(entry)
     save_state("categories", CATEGORY_FILE, category_tree)
     await update.message.reply_text(f"{t(uid, 'admin_added')}\n{' / '.join(folder_path)} - {display}")
 
