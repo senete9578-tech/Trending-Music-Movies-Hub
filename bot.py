@@ -1648,6 +1648,195 @@ async def add_title_to_category(update: Update, context: ContextTypes.DEFAULT_TY
     save_state("categories", CATEGORY_FILE, category_tree)
     await update.message.reply_text(f"{t(uid, 'admin_added')}\n{' / '.join(folder_path)} - {display}")
 
+# ---------- এক কমান্ডে পুরো ক্যাটাগরি ট্রি মুছে ফেলা / নতুন করে বানানো ----------
+# ফরম্যাট: (ফোল্ডারের পথ, [(দেখানোর নাম বা None, [টাইটেল, পার্ট/সিজন, ...]), ...])
+# টাইটেলগুলো /list-এ যেভাবে দেখায় ঠিক সেই নামে লেখা (কোয়ালিটি বাদে)।
+DEFAULT_CATEGORY_PLAN = [
+    (["Hollywood", "Marvel", "Deadpool"], [
+        (None, ["Deadpool.2016.Hindi"]),
+        (None, ["Deadpool.2.2018.Hindi"]),
+        (None, ["Deadpool.&.Wolverine.2024.Hindi"]),
+    ]),
+    (["Hollywood", "Marvel", "Superhero"], [
+        (None, ["Captain.Marvel.2019.Hindi"]),
+        (None, ["Captain.America-B.N.W.2025.Hindi"]),
+        (None, ["Black.Widow.2021.Hindi"]),
+    ]),
+    (["Hollywood", "John Wick Series"], [
+        (None, ["John Wick Hindi", "Part-1", "John Wick 2014 Hindi"]),
+        (None, ["John Wick Hindi", "Part-2", "John Wick Chapter 2 2017 Hindi"]),
+        (None, ["John Wick Hindi", "Part-3", "John Wick Chapter 3 Parabellum 2019 Hindi"]),
+        (None, ["John Wick Hindi", "Part-4", "John Wick Chapter 4 2023 Hindi"]),
+    ]),
+    (["Hollywood", "Kingsman Series"], [
+        (None, ["Kingsman The Secret Service Hindi"]),
+        (None, ["Kingsman The Golden Circle Hindi"]),
+    ]),
+    (["Hollywood", "Maze Runner Series"], [
+        (None, ["The Maze Runner", "Part-1", "The Maze Runner 2014 Hindi"]),
+        (None, ["The Maze Runner", "Part-2", "Maze Runner The Scorch Trials 2015 Hindi"]),
+        (None, ["The Maze Runner", "Part-3", "Maze Runner The Death Cure 2018 Hindi"]),
+    ]),
+    (["Hollywood", "Sci-Fi"], [
+        (None, ["Ready Player One Hindi"]),
+        (None, ["Dial.1975 2026 Hindi"]),
+    ]),
+    (["Hollywood", "Horror"], [
+        (None, ["The Cabin in the Woods Hindi"]),
+    ]),
+    (["Bollywood", "Spy Movies"], [
+        (None, ["Pathaan 2023 Hindi"]),
+        (None, ["War.2 2025 Hindi"]),
+        (None, ["Alpha 2026 Hindi"]),
+    ]),
+    (["Bollywood", "Dhoom Series"], [
+        (None, ["Dhoom Hindi", "Part-1", "Dhoom Hindi"]),
+        (None, ["Dhoom Hindi", "Part-2", "Dhoom 2 Hindi"]),
+        (None, ["Dhoom Hindi", "Part-3", "Dhoom 3 Hindi"]),
+        (None, ["Dhoom Hindi", "Part-5", "Dhoom 5 Hindi"]),
+    ]),
+    (["Bollywood", "Dhurandhar Series"], [
+        (None, ["Dhurandhar Hindi", "Part 1", "Dhurandhar 2025 Hindi"]),
+        (None, ["Dhurandhar Hindi", "Part 2", "Dhurandhar-The Revenge 2026 Hindi"]),
+    ]),
+    (["Bollywood", "Action"], [
+        (None, ["Jawan 2023 Hindi"]),
+        (None, ["Ra.One 2011 Hindi"]),
+        (None, ["O-Romeo 2026 Hindi"]),
+        (None, ["Ghamasaan 2026 Hindi"]),
+    ]),
+    (["Bollywood", "Thriller"], [
+        (None, ["Drishyam 2015 Hindi"]),
+        (None, ["Tumbbad 2018 Hindi"]),
+    ]),
+    (["South Movies", "Pushpa Series"], [
+        (None, ["Pushpa Hindi", "Part-1", "Pushpa-The Rise 2021Hindi"]),
+        (None, ["Pushpa Hindi", "Part-2", "Pushpa 2 The Rule Reloaded 2024 Hindi"]),
+    ]),
+    (["South Movies", "Kantara Series"], [
+        (None, ["Kantara Hindi", "Part-1", "Kantara 2022 Hindi"]),
+        (None, ["Kantara Hindi", "Part-2", "Kantara Chapter 1 2025 Hindi"]),
+    ]),
+    (["South Movies", "Sci-Fi & Fantasy"], [
+        (None, ["Kalki 2024 Hindi"]),
+        (None, ["Karthikeya 2. 2022 Hindi"]),
+    ]),
+    (["South Movies", "Action"], [
+        (None, ["RRR 2022 Hindi"]),
+        (None, ["Salaar 2023 Hindi"]),
+        (None, ["Marco 2024 Hindi"]),
+        (None, ["TOXiC 2026 Hindi"]),
+        (None, ["Red 2021 Hindi"]),
+    ]),
+    (["Web Series", "Daredevil"], [
+        ("Daredevil - Season 1", ["Daredevil Hindi", "Season 1", "Episode 1 to 13"]),
+        ("Daredevil - Season 2", ["Daredevil Hindi", "Season 2", "Episode 1 to 13"]),
+        ("Daredevil - Season 3", ["Daredevil Hindi", "Season 3", "Episode 1 to 13"]),
+        ("Daredevil Final", ["Daredevil Hindi", "Daredevil Final Hindi"]),
+    ]),
+    (["Web Series", "The Punisher"], [
+        (None, ["The Punisher Hindi"]),
+    ]),
+    (["Web Series", "Doctor Stranger"], [
+        ("Doctor Stranger - Season 1", ["Doctor Stranger Hindi", "Season 1", "Episode 1 to 20"]),
+    ]),
+    (["Songs", "Hindi Songs"], [
+        ("Apna Bana Le", ["Apna Bana Le"]),
+        ("Tum Se Hi - Jab We Met", ["Tum Se Hi"]),
+        ("Aaj Ki Raat - Stree 2", ["Aaj Ki Raat"]),
+    ]),
+    (["Songs", "Bengali Songs"], [
+        ("Tomake - Parineeta", ["Tomake"]),
+    ]),
+]
+
+def match_plan_entry(segments):
+    """segments-এর সাথে db-র আসল টাইটেল/পথ মেলায়। পুরোটা না মিললে শেষ ধাপগুলো বাদ দিয়ে যতটুকু মেলে ততটুকু।
+    রিটার্ন: (টাইটেল, নেস্টেড পথ, পুরোপুরি মিলেছে কিনা) অথবা None।"""
+    for k in range(len(segments), 0, -1):
+        segs = segments[:k]
+        res = resolve_title_and_path(segs)
+        if res and not res[0]:
+            return res[1], res[2], k == len(segments)
+        first = _normalize_label(segs[0])
+        candidates = [ti for ti in db if first and first in _normalize_label(ti)]
+        if candidates:
+            ti = candidates[0]
+            node = db[ti]
+            path = []
+            ok = True
+            for label in segs[1:]:
+                key = find_key_ci(node, label)
+                if key is None:
+                    ok = False
+                    break
+                path.append(key)
+                node = node[key]
+            if ok:
+                return ti, path, k == len(segments)
+    return None
+
+async def clear_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    category_tree.clear()
+    category_browse_state.clear()
+    save_state("categories", CATEGORY_FILE, category_tree)
+    await update.message.reply_text(f"{t(uid, 'admin_deleted')}\nAll category folders cleared (your titles/links are untouched).")
+
+async def build_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+
+    category_tree.clear()
+    category_browse_state.clear()
+    added = 0
+    partial_lines = []
+    missing_lines = []
+
+    for folder_path, entries in DEFAULT_CATEGORY_PLAN:
+        node = category_tree
+        for seg in folder_path:
+            node = node.setdefault(seg, {})
+        node.setdefault("_titles", [])
+        for display, segments in entries:
+            m = match_plan_entry(segments)
+            where = " / ".join(folder_path)
+            if m is None:
+                missing_lines.append(f"{where}: {' - '.join(segments)}")
+                continue
+            title, path, full = m
+            shown = display or (path[-1] if path else title)
+            node["_titles"].append({"title": title, "path": path, "display": shown})
+            added += 1
+            if not full:
+                partial_lines.append(f"{where}: {' - '.join(segments)}  ->  only reached: {title}" + (f" / {' / '.join(path)}" if path else ""))
+
+    save_state("categories", CATEGORY_FILE, category_tree)
+
+    lines = [f"{t(uid, 'admin_added')}", f"Folders built. Titles placed: {added}"]
+    if partial_lines:
+        lines.append("")
+        lines.append("Partly matched (opens one level higher than intended):")
+        lines.extend(partial_lines)
+    if missing_lines:
+        lines.append("")
+        lines.append("Not found in your library (check the name with /list):")
+        lines.extend(missing_lines)
+    if not partial_lines and not missing_lines:
+        lines.append("Everything matched.")
+
+    chunk = ""
+    for line in lines:
+        if len(chunk) + len(line) + 1 > 3900:
+            await update.message.reply_text(chunk)
+            chunk = ""
+        chunk += line + "\n"
+    if chunk.strip():
+        await update.message.reply_text(chunk)
+
 async def remove_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -1953,6 +2142,8 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("addcategory", add_category))
     application.add_handler(CommandHandler("addtitletocategory", add_title_to_category))
     application.add_handler(CommandHandler("removecategory", remove_category))
+    application.add_handler(CommandHandler("clearcategories", clear_categories))
+    application.add_handler(CommandHandler("buildcategories", build_categories))
     application.add_handler(CommandHandler("removetitlefromcategory", remove_title_from_category))
     application.add_handler(CommandHandler("removelatest", remove_latest))
     application.add_handler(CommandHandler("language", language_command))
