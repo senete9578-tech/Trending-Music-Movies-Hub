@@ -1971,6 +1971,37 @@ async def build_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chunk.strip():
         await update.message.reply_text(chunk)
 
+async def wrap_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/wrapcategory ফোল্ডার | সাব-ফোল্ডার | নতুন-নাম — ফোল্ডারের ভেতরের সবকিছু একটা নতুন সাব-ফোল্ডারে ঢুকিয়ে দেয়।"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    segments = [x.strip() for x in parts[1].split("|")] if len(parts) > 1 else []
+    if len(segments) < 2 or not all(segments):
+        await update.message.reply_text(
+            f"{t(uid, 'admin_format_error')}\n/wrapcategory Folder | ... | New Subfolder\n"
+            "Example: /wrapcategory Hollywood | Marvel | Main Universe")
+        return
+    *folder_path, new_name = segments
+    node = category_tree
+    real_path = []
+    for seg in folder_path:
+        key = find_key_ci(node, seg)
+        if key is None or not isinstance(node.get(key), dict):
+            await update.message.reply_text(t(uid, "admin_not_found"))
+            return
+        real_path.append(key)
+        node = node[key]
+    if find_key_ci(node, new_name) is not None:
+        await update.message.reply_text(f"{t(uid, 'admin_already')}\n{' / '.join(real_path)} / {new_name}")
+        return
+    moved = dict(node)
+    node.clear()
+    node[new_name] = moved
+    save_state("categories", CATEGORY_FILE, category_tree)
+    await update.message.reply_text(f"{t(uid, 'admin_updated')}\n{' / '.join(real_path)} / {new_name}")
+
 async def remove_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -2302,6 +2333,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("addtitletocategory", add_title_to_category))
     application.add_handler(CommandHandler("removecategory", remove_category))
     application.add_handler(CommandHandler("clearcategories", clear_categories))
+    application.add_handler(CommandHandler("wrapcategory", wrap_category))
     application.add_handler(CommandHandler("buildcategories", build_categories))
     application.add_handler(CommandHandler("removetitlefromcategory", remove_title_from_category))
     application.add_handler(CommandHandler("removelatest", remove_latest))
