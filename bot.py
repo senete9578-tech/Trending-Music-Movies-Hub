@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
+    ContextTypes, filters, TypeHandler
 )
 
 from starlette.applications import Starlette
@@ -87,18 +87,10 @@ HISTORY_LIMIT = 15
 
 # ---------- লোডিং/প্রসেসিং টেক্সট-অ্যানিমেশন (একটা মেসেজ নিজেই বদলে বদলে দেখায়, ChatGPT/DeepSeek-স্টাইল) ----------
 LOADING_FRAME_SETS = [
-    [
-        "⚡ *প্রসেসিং শুরু হচ্ছে...*",
-        "⚡⚡ *বজ্রপাতের গতিতে ডেটা প্রসেস হচ্ছে...* 🔥",
-        "🔥⚡ *ফলাফল তৈরি হচ্ছে...* ⚡🔥",
-        "💥⚡ *চূড়ান্ত রূপ দেওয়া হচ্ছে...* 🔥",
-    ],
-    [
-        "🔍 *খোঁজা হচ্ছে...*",
-        "✨🔍 *মিলিয়ে দেখা হচ্ছে...* ✨",
-        "🌟 *প্রায় হয়ে গেছে...* 🌟",
-        "🎬 *রেজাল্ট সাজানো হচ্ছে...* 🎬",
-    ],
+    ["⚡", "⚡ ⚡", "⚡ ⚡ ⚡", "🔥 ⚡ 🔥"],
+    ["🔍", "🔍 ✨", "✨ 🔍 ✨", "🎬 ✨ 🎬"],
+    ["⏳", "⏳ ⏳", "⏳ ⏳ ⏳", "✅"],
+    ["🌀", "🌀 🌀", "🌀 🌀 🌀", "🎯"],
 ]
 
 # শুধু এই সেশনে চালু থাকা, রিস্টার্টে মুছে যাওয়া অস্থায়ী ডাটা
@@ -509,10 +501,15 @@ def fuzzy_search(query: str, titles, limit: int = 200):
     scored.sort(key=lambda x: x[0], reverse=True)
     return [title for _, title in scored[:limit]]
 
+def grid_rows(flat_buttons, per_row=2):
+    """বাটনগুলোকে একটা করে সারির বদলে দুটো করে সারিতে (গ্রিড) সাজায়।"""
+    return [flat_buttons[i:i + per_row] for i in range(0, len(flat_buttons), per_row)]
+
 def build_results_keyboard(titles, page: int = 0):
     start = page * PAGE_SIZE
     page_titles = titles[start:start + PAGE_SIZE]
-    buttons = [[InlineKeyboardButton(title, callback_data=f"title::{title}")] for title in page_titles]
+    flat = [InlineKeyboardButton(title, callback_data=f"title::{title}") for title in page_titles]
+    buttons = grid_rows(flat, 2)
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton("◀️", callback_data=f"page::{page - 1}"))
@@ -1419,18 +1416,8 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
             )
         except Exception:
             pass
-        suggestions = get_latest_entries(5)
-        rows = []
-        if suggestions:
-            latest_entries_cache[uid] = suggestions
-            rows.extend([
-                [InlineKeyboardButton(v["display"], callback_data=f"latestopen::{i}")]
-                for i, v in enumerate(suggestions)
-            ])
         cat_text, cat_markup = render_category_level(uid, [])
-        if cat_text and cat_markup.inline_keyboard:
-            rows.extend(cat_markup.inline_keyboard)
-        reply_markup = InlineKeyboardMarkup(rows) if rows else None
+        reply_markup = cat_markup if (cat_text and cat_markup.inline_keyboard) else None
         try:
             await sent.edit_text(t(uid, "not_found"), reply_markup=reply_markup)
         except Exception:
@@ -1537,16 +1524,17 @@ def render_category_level(uid, path):
             titles.append({"title": rt, "path": [], "display": rt})
 
     children = []
-    buttons = []
+    flat = []
     for sf in subfolders:
         children.append(("folder", sf, None))
-        buttons.append([InlineKeyboardButton(sf, callback_data=f"catnav::{len(children) - 1}")])
+        flat.append(InlineKeyboardButton(sf, callback_data=f"catnav::{len(children) - 1}"))
     for ti in titles:
         children.append(("title", ti["title"], ti.get("path", [])))
-        buttons.append([InlineKeyboardButton(ti.get("display", ti["title"]), callback_data=f"catnav::{len(children) - 1}")])
+        flat.append(InlineKeyboardButton(ti.get("display", ti["title"]), callback_data=f"catnav::{len(children) - 1}"))
 
     category_browse_state[uid] = {"path": path, "children": children}
 
+    buttons = grid_rows(flat, 2)
     if path:
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="catback")])
 
@@ -1934,8 +1922,18 @@ async def post_init(application: Application):
         BotCommand("support", "contact support for any help"),
     ])
 
+async def show_typing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """প্রতিটা মেসেজ/কমান্ডের শুরুতে 'টাইপিং...' ইন্ডিকেটর দেখায় — ভাষা-নিরপেক্ষ,
+    কোল্ড-স্টার্ট বা ধীরগতির সময় ইউজারকে বুঝিয়ে রাখে যে কিছু একটা হচ্ছে।"""
+    try:
+        if update.effective_chat:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    except Exception:
+        pass
+
 def build_application() -> Application:
     application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    application.add_handler(TypeHandler(Update, show_typing), group=-1)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
