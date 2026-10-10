@@ -1677,18 +1677,13 @@ def get_category_node(path):
     return node
 
 def pyramid_rows(flat):
-    """সারি ১,২,৩,৩… বাটন (পিরামিড)। ছোট নাম ভাগ হয়ে বসে, বড় নাম পুরো সারি নেয়।"""
-    def cap(b):
-        n = len(b.text)
-        return 3 if n <= 11 else (2 if n <= 22 else 1)
-    rows, i, r = [], 0, 0
+    """২টা করে এক সারিতে; বড় নাম (২২+ অক্ষর) পুরো সারি একাই নেয়।"""
+    rows, i = [], 0
     while i < len(flat):
-        s = min(r + 1, 3)
-        while s > 1 and (i + s > len(flat) or any(cap(b) < s for b in flat[i:i + s])):
-            s -= 1
-        rows.append(flat[i:i + s])
-        i += s
-        r += 1
+        if len(flat[i].text) <= 22 and i + 1 < len(flat) and len(flat[i + 1].text) <= 22:
+            rows.append(flat[i:i + 2]); i += 2
+        else:
+            rows.append([flat[i]]); i += 1
     return rows
 
 def render_category_level(uid, path):
