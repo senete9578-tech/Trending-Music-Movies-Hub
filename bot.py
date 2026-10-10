@@ -8,7 +8,7 @@ import re
 import random
 from datetime import datetime, timezone
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup as _OrigMarkup, BotCommand, ForceReply
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup as _OrigMarkup, BotCommand, ForceReply, InputMediaPhoto
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters, TypeHandler, ApplicationHandlerStop
@@ -1686,7 +1686,7 @@ def pyramid_rows(flat):
             rows.append([flat[i]]); i += 1
     return rows
 
-def render_category_level(uid, path):
+def render_category_level(uid, path, with_tree=True):
     node = get_category_node(path)
     if node is None:
         return None, None
@@ -1719,9 +1719,154 @@ def render_category_level(uid, path):
     if path:
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="catback")])
 
-    label = " / ".join(path) if path else "Categories"
-    text = f"{label}\n{t(uid, 'select_option')}"
+    names = [b.text for b in flat]
+    if with_tree:
+        text = f"{category_tree_text(path, names)}\n\n{t(uid, 'select_option')}"
+    else:
+        text = f"{' / '.join(path) if path else 'Categories'}\n{t(uid, 'select_option')}"
     return text, InlineKeyboardMarkup(buttons)
+
+def category_tree_text(path, names, limit=12):
+    """গাছের মতো লেখা: Categories └─ Hollywood └─ Marvel ├─ ..."""
+    lines = ["Categories"]
+    for d, p in enumerate(path):
+        lines.append("   " * d + "└─ " + p)
+    pad = "   " * len(path)
+    shown = names[:limit]
+    for i, n in enumerate(shown):
+        last = (i == len(shown) - 1) and len(names) <= limit
+        lines.append(pad + ("└─ " if last else "├─ ") + n)
+    if len(names) > limit:
+        lines.append(pad + f"└─ … +{len(names) - limit}")
+    return "\n".join(lines)
+
+_TREE_COLORS = [((219, 238, 250), (41, 128, 185)), ((250, 224, 238), (200, 70, 140)),
+                ((222, 243, 228), (39, 150, 90)), ((253, 240, 214), (230, 150, 30))]
+
+def draw_tree_image(path, names, limit=9):
+    """পাঠ্যবইয়ের মতো গাছের ছবি (সাদা ব্যাকগ্রাউন্ড, রঙিন বক্স, দাগ)।"""
+    from PIL import ImageDraw, ImageFont
+    try:
+        font = ImageFont.load_default(size=26)
+        small = ImageFont.load_default(size=23)
+    except Exception:
+        font = small = ImageFont.load_default()
+    W, pad = 960, 30
+    chain = ["Categories"] + list(path)
+    shown = names[:limit]
+    cols = 3
+    rows_n = (len(shown) + cols - 1) // cols
+    node_w, node_h, gap = 460, 66, 38
+    ch_w, ch_h, ch_gap = 280, 84, 44
+    H = pad * 2 + len(chain) * node_h + (len(chain) - 1) * gap
+    if shown:
+        H += gap + 30 + rows_n * ch_h + (rows_n - 1) * ch_gap
+        if len(names) > limit:
+            H += 50
+    img = _PILImage.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    ink = (40, 40, 40)
+
+    def fit(txt, f, maxw):
+        if d.textlength(txt, font=f) <= maxw:
+            return txt
+        while len(txt) > 1 and d.textlength(txt + "…", font=f) > maxw:
+            txt = txt[:-1]
+        return txt.rstrip() + "…"
+
+    cx, y = W // 2, pad
+    for i, n in enumerate(chain):
+        fill, edge = _TREE_COLORS[min(i, 3)] if i else ((200, 235, 230), (30, 130, 120))
+        d.rounded_rectangle([cx - node_w // 2, y, cx + node_w // 2, y + node_h], 16, fill=fill, outline=edge, width=4)
+        txt = fit(n, font, node_w - 30)
+        tw = d.textlength(txt, font=font)
+        d.text((cx - tw / 2, y + node_h / 2 - 15), txt, font=font, fill=ink)
+        y += node_h
+        if i < len(chain) - 1:
+            d.line([cx, y, cx, y + gap], fill=ink, width=4)
+            y += gap
+    if shown:
+        d.line([cx, y, cx, y + gap // 2 + 8], fill=ink, width=4)
+        y += gap // 2 + 8
+        first_row = shown[:cols]
+        span = cols * ch_w + (cols - 1) * 20
+        x0 = (W - span) // 2
+        d.line([x0 + ch_w // 2, y, x0 + span - ch_w // 2, y], fill=ink, width=4)
+        y += 22
+        for idx, n in enumerate(shown):
+            r, c = divmod(idx, cols)
+            in_row = min(cols, len(shown) - r * cols)
+            rspan = in_row * ch_w + (in_row - 1) * 20
+            rx0 = (W - rspan) // 2
+            bx = rx0 + c * (ch_w + 20)
+            by = y + r * (ch_h + ch_gap)
+            fill, edge = _TREE_COLORS[idx % 4]
+            if r == 0:
+                d.line([bx + ch_w // 2, by - 22, bx + ch_w // 2, by], fill=ink, width=4)
+            else:
+                d.line([bx + ch_w // 2, by - ch_gap, bx + ch_w // 2, by], fill=ink, width=3)
+            d.rounded_rectangle([bx, by, bx + ch_w, by + ch_h], 16, fill=fill, outline=edge, width=4)
+            txt = fit(n, small, ch_w - 22)
+            tw = d.textlength(txt, font=small)
+            d.text((bx + (ch_w - tw) / 2, by + ch_h / 2 - 13), txt, font=small, fill=ink)
+        if len(names) > limit:
+            d.text((cx - 60, H - pad - 28), f"… +{len(names) - limit} more", font=small, fill=ink)
+    out = io.BytesIO()
+    img.save(out, "PNG")
+    return out.getvalue()
+
+class _EditProxy:
+    """ছবির মেসেজ থেকে টাইটেল খোলার সময় নতুন টেক্সট মেসেজে এডিট পাঠায়।"""
+    def __init__(self, msg, data):
+        self._m, self.data = msg, data
+    async def edit_message_text(self, text, reply_markup=None, **kw):
+        return await self._m.edit_text(text, reply_markup=reply_markup)
+
+def tree_mode():
+    return bot_settings.get("tree_mode", "text")
+
+async def present_category(context, uid, path, query=None, chat_id=None):
+    """ক্যাটাগরি লেভেল দেখায় — text মোডে লেখার গাছ, image মোডে গাছের ছবি। সফল হলে True।"""
+    text, markup = render_category_level(uid, path)
+    if not text:
+        return False
+    if tree_mode() == "image" and _PILImage:
+        try:
+            names = [b.text for row in markup.inline_keyboard for b in row if str(b.callback_data).startswith("catnav::")]
+            img = await asyncio.get_running_loop().run_in_executor(None, draw_tree_image, path, names)
+            cap, _ = render_category_level(uid, path, with_tree=False)
+            if query is not None and query.message.photo:
+                await query.edit_message_media(InputMediaPhoto(img, caption=cap), reply_markup=markup)
+            else:
+                cid = query.message.chat_id if query is not None else chat_id
+                if query is not None:
+                    try: await query.message.delete()
+                    except Exception: pass
+                await context.bot.send_photo(chat_id=cid, photo=img, caption=cap, reply_markup=markup)
+            return True
+        except Exception as e:
+            logging.warning("tree image failed: %s", e)
+    if query is not None:
+        if query.message.photo:
+            try: await query.message.delete()
+            except Exception: pass
+            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=markup)
+        else:
+            await query.edit_message_text(text, reply_markup=markup)
+    else:
+        await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
+    return True
+
+async def tree_style_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split()
+    if len(parts) < 2 or parts[1].lower() not in ("text", "image"):
+        await update.message.reply_text(f"Current: {tree_mode()}\n/treestyle text\n/treestyle image")
+        return
+    bot_settings["tree_mode"] = parts[1].lower()
+    save_state("settings", SETTINGS_FILE, bot_settings)
+    await update.message.reply_text(f"Tree style: {parts[1].lower()}")
 
 async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -1730,7 +1875,7 @@ async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not text or not markup.inline_keyboard:
         await update.message.reply_text(t(uid, "not_found"))
         return
-    await update.message.reply_text(text, reply_markup=markup)
+    await present_category(context, uid, [], chat_id=update.effective_chat.id)
 
 async def category_navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1744,13 +1889,15 @@ async def category_navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if kind == "folder":
         new_path = state["path"] + [value]
-        text, markup = render_category_level(uid, new_path)
-        if not text:
+        if not await present_category(context, uid, new_path, query=query):
             await query.edit_message_text(t(uid, "content_unavailable"))
-            return
-        await query.edit_message_text(text, reply_markup=markup)
     else:
         category_return_path[uid] = state["path"]
+        if query.message.photo:
+            try: await query.message.delete()
+            except Exception: pass
+            m = await context.bot.send_message(chat_id=query.message.chat_id, text="…")
+            query = _EditProxy(m, query.data)
         await open_nested_entry(query, uid, value, extra_path, origin="category")
 
 async def category_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1761,11 +1908,8 @@ async def category_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not state:
         return
     new_path = state["path"][:-1]
-    text, markup = render_category_level(uid, new_path)
-    if not text:
+    if not await present_category(context, uid, new_path, query=query):
         await query.edit_message_text(t(uid, "content_unavailable"))
-        return
-    await query.edit_message_text(text, reply_markup=markup)
 
 # ---------- ক্যাটাগরি/ফোল্ডার — অ্যাডমিন কমান্ড ----------
 async def add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2407,6 +2551,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("addtitletocategory", add_title_to_category))
     application.add_handler(CommandHandler("removecategory", remove_category))
     application.add_handler(CommandHandler("clearcategories", clear_categories))
+    application.add_handler(CommandHandler("treestyle", tree_style_command))
     application.add_handler(CommandHandler("wrapcategory", wrap_category))
     application.add_handler(CommandHandler("buildcategories", build_categories))
     application.add_handler(CommandHandler("removetitlefromcategory", remove_title_from_category))
