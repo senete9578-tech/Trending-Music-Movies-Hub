@@ -14,7 +14,7 @@ from telegram.ext import (
     ContextTypes, filters, TypeHandler, ApplicationHandlerStop
 )
 
-_SINGLE_ROW_KEEP = ("navback", "catback", "begin", "request", "page::", "reset_")
+_SINGLE_ROW_KEEP = ("catnav::", "navback", "catback", "begin", "request", "page::", "reset_")
 
 def _regroup_rows(rows):
     """পাশাপাশি থাকা একক-বাটনের সারিগুলোকে দুটো করে এক সারিতে বসায় (ব্যাক/পেজ বাটন আলাদা থাকে)।"""
@@ -49,7 +49,7 @@ def _fit(btn, limit=22):
 class InlineKeyboardMarkup(_OrigMarkup):
     def __init__(self, inline_keyboard, *args, **kwargs):
         rows = _regroup_rows(inline_keyboard)
-        rows = [[_fit(b) for b in r] if len(r) == 2 else r for r in rows]
+        rows = [[_fit(b) for b in r] if len(r) == 2 else ([_fit(b, 12) for b in r] if len(r) == 3 else r) for r in rows]
         super().__init__(rows, *args, **kwargs)
 
 from starlette.applications import Starlette
@@ -1676,6 +1676,21 @@ def get_category_node(path):
         node = node[p]
     return node
 
+def pyramid_rows(flat):
+    """সারি ১,২,৩,৩… বাটন (পিরামিড)। ছোট নাম ভাগ হয়ে বসে, বড় নাম পুরো সারি নেয়।"""
+    def cap(b):
+        n = len(b.text)
+        return 3 if n <= 11 else (2 if n <= 22 else 1)
+    rows, i, r = [], 0, 0
+    while i < len(flat):
+        s = min(r + 1, 3)
+        while s > 1 and (i + s > len(flat) or any(cap(b) < s for b in flat[i:i + s])):
+            s -= 1
+        rows.append(flat[i:i + s])
+        i += s
+        r += 1
+    return rows
+
 def render_category_level(uid, path):
     node = get_category_node(path)
     if node is None:
@@ -1705,7 +1720,7 @@ def render_category_level(uid, path):
 
     category_browse_state[uid] = {"path": path, "children": children}
 
-    buttons = grid_rows(flat, 2)
+    buttons = pyramid_rows(flat)
     if path:
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="catback")])
 
