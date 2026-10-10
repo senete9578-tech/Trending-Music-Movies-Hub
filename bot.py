@@ -1268,6 +1268,17 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{t(uid, 'admin_broadcast_failed')} {failed}"
     )
 
+def poster_key(title, path):
+    return title if not path else title + "::" + " / ".join(path)
+
+def find_poster(title, path):
+    """সবচেয়ে নির্দিষ্ট পোস্টার আগে (যেমন Part 2), না থাকলে উপরের ধাপের, শেষে মূল টাইটেলের।"""
+    for i in range(len(path), -1, -1):
+        p = title_posters.get(poster_key(title, path[:i]))
+        if p:
+            return p
+    return None
+
 async def set_poster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -1282,23 +1293,24 @@ async def set_poster(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     raw = parts[1].strip()
-    if "|" in raw:
-        title, url = [s.strip() for s in raw.split("|", 1)]
-        matched = find_existing_title(title)
-        if matched not in db:
-            await update.message.reply_text(t(uid, "admin_not_found"))
-            return
-        title_posters[matched] = url
-        save_state("posters", POSTERS_FILE, title_posters)
-        await update.message.reply_text(f"{t(uid, 'admin_added')}\n{matched}")
-        return
-
-    matched = find_existing_title(raw)
-    if matched not in db:
+    segments = [x.strip() for x in raw.split("|") if x.strip()]
+    url = None
+    if len(segments) > 1 and segments[-1].lower().startswith(("http://", "https://")):
+        url = segments.pop()
+    res = resolve_title_and_path(segments) if segments else None
+    if res is None or res[0]:
         await update.message.reply_text(t(uid, "admin_not_found"))
         return
-    awaiting_poster[uid] = matched
-    await update.message.reply_text(f"Now send the poster photo for:\n{matched}")
+    _, matched, nested = res
+    key = poster_key(matched, nested)
+    shown = matched if not nested else f"{matched} - {' / '.join(nested)}"
+    if url:
+        title_posters[key] = url
+        save_state("posters", POSTERS_FILE, title_posters)
+        await update.message.reply_text(f"{t(uid, 'admin_added')}\n{shown}")
+        return
+    awaiting_poster[uid] = key
+    await update.message.reply_text(f"Now send the poster photo for:\n{shown}")
 
 async def receive_poster_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -2205,7 +2217,7 @@ async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
     caption = f"{label}\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
-    poster = title_posters.get(state["title"])
+    poster = find_poster(state["title"], state["path"])
     if poster:
         try:
             await query.message.reply_photo(photo=poster, caption=caption)
