@@ -1743,7 +1743,7 @@ def category_tree_text(path, names, limit=12):
 _TREE_COLORS = [((219, 238, 250), (41, 128, 185)), ((250, 224, 238), (200, 70, 140)),
                 ((222, 243, 228), (39, 150, 90)), ((253, 240, 214), (230, 150, 30))]
 
-def draw_tree_image(path, names, limit=9):
+def draw_tree_image(path, names, limit=9, theme="classic"):
     """পাঠ্যবইয়ের মতো গাছের ছবি (সাদা ব্যাকগ্রাউন্ড, রঙিন বক্স, দাগ)।"""
     from PIL import ImageDraw, ImageFont
     try:
@@ -1763,9 +1763,13 @@ def draw_tree_image(path, names, limit=9):
         H += gap + 30 + rows_n * ch_h + (rows_n - 1) * ch_gap
         if len(names) > limit:
             H += 50
-    img = _PILImage.new("RGB", (W, H), (255, 255, 255))
+    neon = theme == "neon"
+    bg = (14, 14, 34) if neon else (255, 255, 255)
+    img = _PILImage.new("RGB", (W, H), bg)
     d = ImageDraw.Draw(img)
-    ink = (40, 40, 40)
+    ink = (0, 230, 255) if neon else (40, 40, 40)
+    txt_col = (255, 255, 255) if neon else (40, 40, 40)
+    palette = _NEON_COLORS if neon else _TREE_COLORS
 
     def fit(txt, f, maxw):
         if d.textlength(txt, font=f) <= maxw:
@@ -1776,11 +1780,11 @@ def draw_tree_image(path, names, limit=9):
 
     cx, y = W // 2, pad
     for i, n in enumerate(chain):
-        fill, edge = _TREE_COLORS[min(i, 3)] if i else ((200, 235, 230), (30, 130, 120))
+        fill, edge = palette[min(i, 3)] if i else (((30, 30, 70), (0, 230, 255)) if neon else ((200, 235, 230), (30, 130, 120)))
         d.rounded_rectangle([cx - node_w // 2, y, cx + node_w // 2, y + node_h], 16, fill=fill, outline=edge, width=4)
         txt = fit(n, font, node_w - 30)
         tw = d.textlength(txt, font=font)
-        d.text((cx - tw / 2, y + node_h / 2 - 15), txt, font=font, fill=ink)
+        d.text((cx - tw / 2, y + node_h / 2 - 15), txt, font=font, fill=txt_col)
         y += node_h
         if i < len(chain) - 1:
             d.line([cx, y, cx, y + gap], fill=ink, width=4)
@@ -1800,7 +1804,7 @@ def draw_tree_image(path, names, limit=9):
             rx0 = (W - rspan) // 2
             bx = rx0 + c * (ch_w + 20)
             by = y + r * (ch_h + ch_gap)
-            fill, edge = _TREE_COLORS[idx % 4]
+            fill, edge = palette[idx % 4]
             if r == 0:
                 d.line([bx + ch_w // 2, by - 22, bx + ch_w // 2, by], fill=ink, width=4)
             else:
@@ -1808,12 +1812,77 @@ def draw_tree_image(path, names, limit=9):
             d.rounded_rectangle([bx, by, bx + ch_w, by + ch_h], 16, fill=fill, outline=edge, width=4)
             txt = fit(n, small, ch_w - 22)
             tw = d.textlength(txt, font=small)
-            d.text((bx + (ch_w - tw) / 2, by + ch_h / 2 - 13), txt, font=small, fill=ink)
+            d.text((bx + (ch_w - tw) / 2, by + ch_h / 2 - 13), txt, font=small, fill=txt_col)
         if len(names) > limit:
-            d.text((cx - 60, H - pad - 28), f"… +{len(names) - limit} more", font=small, fill=ink)
+            d.text((cx - 60, H - pad - 28), f"… +{len(names) - limit} more", font=small, fill=txt_col)
     out = io.BytesIO()
     img.save(out, "PNG")
     return out.getvalue()
+
+_NEON_COLORS = [((22, 30, 70), (0, 230, 255)), ((50, 20, 60), (255, 60, 190)),
+                ((15, 50, 45), (60, 255, 150)), ((55, 45, 15), (255, 210, 60))]
+
+def draw_cards_image(path, names, limit=8):
+    """কার্ড স্টাইল: ওপরে ব্রেডক্রাম্ব, নিচে নম্বরওয়ালা রঙিন কার্ডের গ্রিড।"""
+    from PIL import ImageDraw, ImageFont
+    try:
+        font = ImageFont.load_default(size=28)
+        small = ImageFont.load_default(size=26)
+    except Exception:
+        font = small = ImageFont.load_default()
+    shown = names[:limit]
+    W, pad, cw, chh, g = 960, 36, 430, 96, 24
+    rows_n = max(1, (len(shown) + 1) // 2)
+    H = pad * 2 + 150 + rows_n * (chh + g) + (50 if len(names) > limit else 0)
+    img = _PILImage.new("RGB", (W, H), (245, 247, 252))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([pad, pad, W - pad, pad + 100], 26, fill=(34, 40, 80))
+    crumb = "  ›  ".join(["Categories"] + list(path))
+    while len(crumb) > 3 and d.textlength(crumb, font=font) > W - 2 * pad - 50:
+        crumb = "…" + crumb[2:]
+    d.text((pad + 25, pad + 34), crumb, font=font, fill=(255, 255, 255))
+    y0 = pad + 100 + 34
+    for idx, n in enumerate(shown):
+        r, c = divmod(idx, 2)
+        x = pad + c * (cw + 2 * g - 12) if len(shown) > 1 else (W - cw) // 2
+        if len(shown) % 2 == 1 and idx == len(shown) - 1:
+            x = (W - cw) // 2
+        y = y0 + r * (chh + g)
+        fill, edge = _TREE_COLORS[idx % 4]
+        d.rounded_rectangle([x, y, x + cw, y + chh], 22, fill=fill, outline=edge, width=4)
+        d.ellipse([x + 16, y + chh // 2 - 26, x + 68, y + chh // 2 + 26], fill=edge)
+        num = str(idx + 1)
+        d.text((x + 42 - d.textlength(num, font=small) / 2, y + chh // 2 - 14), num, font=small, fill=(255, 255, 255))
+        txt = n
+        while len(txt) > 1 and d.textlength(txt + ("…" if txt != n else ""), font=small) > cw - 100:
+            txt = txt[:-1]
+        if txt != n:
+            txt = txt.rstrip() + "…"
+        d.text((x + 86, y + chh // 2 - 14), txt, font=small, fill=(40, 40, 40))
+    if len(names) > limit:
+        d.text((W // 2 - 70, H - pad - 28), f"… +{len(names) - limit} more", font=small, fill=(60, 60, 60))
+    out = io.BytesIO()
+    img.save(out, "PNG")
+    return out.getvalue()
+
+def category_emoji_text(path, kinds_names):
+    head = "📂 " + "  ›  ".join(["Categories"] + list(path))
+    lines = [head, ""]
+    for kind, n in kinds_names[:15]:
+        lines.append(("📁 " if kind == "folder" else "🎬 ") + n)
+    if len(kinds_names) > 15:
+        lines.append(f"… +{len(kinds_names) - 15}")
+    return "\n".join(lines)
+
+TREE_STYLES = ["text", "tree", "neon", "cards", "emoji"]
+
+def pick_style():
+    m = bot_settings.get("tree_mode", "auto")
+    if m == "image":
+        m = "tree"
+    if m == "auto" or m not in TREE_STYLES:
+        return random.choice(TREE_STYLES)
+    return m
 
 class _EditProxy:
     """ছবির মেসেজ থেকে টাইটেল খোলার সময় নতুন টেক্সট মেসেজে এডিট পাঠায়।"""
@@ -1823,29 +1892,43 @@ class _EditProxy:
         return await self._m.edit_text(text, reply_markup=reply_markup)
 
 def tree_mode():
-    return bot_settings.get("tree_mode", "text")
+    return bot_settings.get("tree_mode", "auto")
 
 async def present_category(context, uid, path, query=None, chat_id=None):
-    """ক্যাটাগরি লেভেল দেখায় — text মোডে লেখার গাছ, image মোডে গাছের ছবি। সফল হলে True।"""
-    text, markup = render_category_level(uid, path)
-    if not text:
+    """ক্যাটাগরি লেভেল দেখায় — ৫টা স্টাইলের একটা (auto হলে র‍্যান্ডম)। সফল হলে True।"""
+    base_text, markup = render_category_level(uid, path, with_tree=False)
+    if not base_text:
         return False
-    if tree_mode() == "image" and _PILImage:
+    style = pick_style()
+    names = [b.text for row in markup.inline_keyboard for b in row if str(b.callback_data).startswith("catnav::")]
+    sel = t(uid, "select_option")
+    state = category_browse_state.get(uid, {})
+    kinds = [c[0] for c in state.get("children", [])]
+    if style == "text":
+        text = f"{category_tree_text(path, names)}\n\n{sel}"
+    elif style == "emoji":
+        text = f"{category_emoji_text(path, list(zip(kinds, names)))}\n\n{sel}"
+    else:
+        text = base_text
+    if style in ("tree", "neon", "cards") and _PILImage:
         try:
-            names = [b.text for row in markup.inline_keyboard for b in row if str(b.callback_data).startswith("catnav::")]
-            img = await asyncio.get_running_loop().run_in_executor(None, draw_tree_image, path, names)
-            cap, _ = render_category_level(uid, path, with_tree=False)
+            loop = asyncio.get_running_loop()
+            if style == "cards":
+                img = await loop.run_in_executor(None, draw_cards_image, path, names)
+            else:
+                img = await loop.run_in_executor(None, lambda: draw_tree_image(path, names, 9, "neon" if style == "neon" else "classic"))
             if query is not None and query.message.photo:
-                await query.edit_message_media(InputMediaPhoto(img, caption=cap), reply_markup=markup)
+                await query.edit_message_media(InputMediaPhoto(img, caption=text), reply_markup=markup)
             else:
                 cid = query.message.chat_id if query is not None else chat_id
                 if query is not None:
                     try: await query.message.delete()
                     except Exception: pass
-                await context.bot.send_photo(chat_id=cid, photo=img, caption=cap, reply_markup=markup)
+                await context.bot.send_photo(chat_id=cid, photo=img, caption=text, reply_markup=markup)
             return True
         except Exception as e:
             logging.warning("tree image failed: %s", e)
+            text = f"{category_tree_text(path, names)}\n\n{sel}"
     if query is not None:
         if query.message.photo:
             try: await query.message.delete()
@@ -1861,12 +1944,23 @@ async def tree_style_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if update.effective_user.id != ADMIN_ID:
         return
     parts = (update.message.text or "").split()
-    if len(parts) < 2 or parts[1].lower() not in ("text", "image"):
-        await update.message.reply_text(f"Current: {tree_mode()}\n/treestyle text\n/treestyle image")
+    valid = ["auto"] + TREE_STYLES
+    arg = parts[1].lower() if len(parts) > 1 else ""
+    if arg == "image":
+        arg = "tree"
+    if arg not in valid:
+        await update.message.reply_text(
+            f"Current: {tree_mode()}\n"
+            "/treestyle auto  (random, changes by itself)\n"
+            "/treestyle text  (line tree)\n"
+            "/treestyle tree  (colour tree picture)\n"
+            "/treestyle neon  (dark neon picture)\n"
+            "/treestyle cards (card picture)\n"
+            "/treestyle emoji (emoji list)")
         return
-    bot_settings["tree_mode"] = parts[1].lower()
+    bot_settings["tree_mode"] = arg
     save_state("settings", SETTINGS_FILE, bot_settings)
-    await update.message.reply_text(f"Tree style: {parts[1].lower()}")
+    await update.message.reply_text(f"Tree style: {arg}")
 
 async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
