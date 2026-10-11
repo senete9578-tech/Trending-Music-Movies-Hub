@@ -1962,6 +1962,38 @@ async def tree_style_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     save_state("settings", SETTINGS_FILE, bot_settings)
     await update.message.reply_text(f"Tree style: {arg}")
 
+async def category_after(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/categoryafter Parent | ... | Folder | AfterFolder — Folder-কে AfterFolder-এর ঠিক পাশে (পরে) বসায়।"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split(" ", 1)
+    segs = [x.strip() for x in parts[1].split("|")] if len(parts) > 1 else []
+    if len(segs) < 3 or not all(segs):
+        await update.message.reply_text("/categoryafter Hollywood | DC Comics (DC) | Marvel")
+        return
+    target, folder, parent = segs[-1], segs[-2], segs[:-2]
+    node = category_tree
+    for p in parent:
+        key = next((k for k in node if k != "_titles" and k.lower() == p.lower()), None)
+        if key is None:
+            await update.message.reply_text("Parent folder not found")
+            return
+        node = node[key]
+    fkey = next((k for k in node if k != "_titles" and k.lower() == folder.lower()), None)
+    tkey = next((k for k in node if k != "_titles" and k.lower() == target.lower()), None)
+    if fkey is None or tkey is None or fkey == tkey:
+        await update.message.reply_text("Folder not found")
+        return
+    fval = node[fkey]
+    items = [(k, v) for k, v in node.items() if k != fkey]
+    node.clear()
+    for k, v in items:
+        node[k] = v
+        if k == tkey:
+            node[fkey] = fval
+    save_state("categories", CATEGORY_FILE, category_tree)
+    await update.message.reply_text(f"Done: {fkey} is now right after {tkey}")
+
 async def categories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     register_user(uid, update.effective_user)
@@ -2646,6 +2678,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("removecategory", remove_category))
     application.add_handler(CommandHandler("clearcategories", clear_categories))
     application.add_handler(CommandHandler("treestyle", tree_style_command))
+    application.add_handler(CommandHandler("categoryafter", category_after))
     application.add_handler(CommandHandler("wrapcategory", wrap_category))
     application.add_handler(CommandHandler("buildcategories", build_categories))
     application.add_handler(CommandHandler("removetitlefromcategory", remove_title_from_category))
