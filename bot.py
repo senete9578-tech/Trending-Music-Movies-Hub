@@ -1560,6 +1560,104 @@ async def notify_fulfilled_requests(context: ContextTypes.DEFAULT_TYPE, new_titl
             pending_requests.pop(k, None)
         save_state("requests", REQUESTS_FILE, pending_requests)
 
+# ---------- AI সহকারী (Gemini) ----------
+import urllib.request as _urlreq
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODELS = [m.strip() for m in os.environ.get("GEMINI_MODEL", "gemini-2.5-flash,gemini-2.0-flash,gemini-flash-latest").split(",") if m.strip()]
+ai_history = {}      # user_id -> [(role, text), ...] (সাম্প্রতিক কথোপকথন)
+ai_calls = {}        # user_id -> [timestamps] (ফ্রি কোটা বাঁচাতে প্রতি ইউজারের সীমা)
+AI_PER_HOUR = 25
+
+def ai_enabled():
+    return bool(GEMINI_KEY) and bot_settings.get("ai_on", True)
+
+def _folder_names(node, depth=0, out=None):
+    out = [] if out is None else out
+    if isinstance(node, dict) and depth < 3:
+        for k, v in node.items():
+            if k != "_titles":
+                out.append(k)
+                _folder_names(v, depth + 1, out)
+    return out
+
+def _ai_rate_ok(uid):
+    now = datetime.now(timezone.utc).timestamp()
+    lst = [x for x in ai_calls.get(uid, []) if now - x < 3600]
+    ai_calls[uid] = lst
+    if len(lst) >= AI_PER_HOUR:
+        return False
+    lst.append(now)
+    return True
+
+def _gemini_call(system_text, contents):
+    body = json.dumps({
+        "systemInstruction": {"parts": [{"text": system_text}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.6, "maxOutputTokens": 700, "responseMimeType": "application/json"},
+    }).encode("utf-8")
+    last_err = None
+    for model in GEMINI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        req = _urlreq.Request(url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY})
+        try:
+            with _urlreq.urlopen(req, timeout=25) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            txt = data["candidates"][0]["content"]["parts"][0]["text"]
+            return json.loads(txt)
+        except Exception as e:
+            last_err = e
+            continue
+    raise last_err or RuntimeError("gemini failed")
+
+async def ai_answer(uid, user_text):
+    """Gemini-কে প্রশ্ন পাঠায়। ফেরত: {"reply": str, "titles": [...], "wants_title": bool} অথবা None।"""
+    titles = list(db.keys())[:900]
+    system_text = (
+        "You are the friendly assistant of a Telegram bot called MovieSongSearch_bot. "
+        "The bot owner shares movies, web series and songs as download links. "
+        "You can chat about ANYTHING (general questions, movies, songs, help), like a helpful chatbot. "
+        "ALWAYS reply in the same language and script the user writes in (Bengali, Hindi, English, etc.). "
+        "Keep replies short (1-4 sentences), warm and natural.\n"
+        "RULES FOR MOVIES/SONGS: The ONLY titles available in this bot are in AVAILABLE_TITLES below. "
+        "If the user asks for / searches a movie, series or song, pick matching titles ONLY from that list, copied EXACTLY, "
+        "and put them in \"titles\" (max 6). NEVER invent a title and NEVER give links. "
+        "If the thing they want is NOT in the list, say politely it is not available yet, the owner has been informed, "
+        "set \"wants_title\" true and leave \"titles\" empty. "
+        "If it is just general chat, set \"wants_title\" false and \"titles\" empty.\n"
+        "Reply with JSON only: {\"reply\": string, \"titles\": [string], \"wants_title\": boolean}.\n"
+        f"FOLDERS: {', '.join(_folder_names(category_tree)[:60])}\n"
+        f"AVAILABLE_TITLES: {' || '.join(titles)}"
+    )
+    hist = ai_history.setdefault(uid, [])
+    contents = [{"role": r, "parts": [{"text": x}]} for r, x in hist[-6:]]
+    contents.append({"role": "user", "parts": [{"text": user_text[:1500]}]})
+    data = await asyncio.get_running_loop().run_in_executor(None, _gemini_call, system_text, contents)
+    reply = str(data.get("reply", "")).strip()
+    if not reply:
+        return None
+    valid = []
+    low = {k.lower(): k for k in db}
+    for tt in data.get("titles", []) or []:
+        k = low.get(str(tt).strip().lower())
+        if k and k not in valid:
+            valid.append(k)
+    hist.append(("user", user_text[:1500]))
+    hist.append(("model", reply))
+    del hist[:-12]
+    return {"reply": reply, "titles": valid[:6], "wants_title": bool(data.get("wants_title")) and not valid}
+
+async def ai_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split()
+    arg = parts[1].lower() if len(parts) > 1 else ""
+    if arg in ("on", "off"):
+        bot_settings["ai_on"] = (arg == "on")
+        save_state("settings", SETTINGS_FILE, bot_settings)
+    state = "ON" if ai_enabled() else "OFF"
+    key = "set" if GEMINI_KEY else "MISSING (add GEMINI_API_KEY in Render)"
+    await update.message.reply_text(f"AI: {state}\nKey: {key}\n/ai on\n/ai off")
+
 async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_query: str):
     raw_query = raw_query.strip()
     if not raw_query:
@@ -1571,6 +1669,39 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     hist.append({"q": raw_query, "t": datetime.now(timezone.utc).isoformat()})
     del hist[:-HISTORY_LIMIT]
     save_state("search_history", SEARCH_HISTORY_FILE, user_search_history)
+
+    # --- AI: নামে সরাসরি মিললে সাধারণ সার্চ, না মিললে (বা কথাবার্তা হলে) AI ---
+    sq = _squash(raw_query)
+    strong = len(sq) >= 2 and any(sq in _squash(k) for k in db.keys())
+    if ai_enabled() and not strong and _ai_rate_ok(uid):
+        try:
+            res = await ai_answer(uid, raw_query)
+        except Exception as e:
+            logging.warning("AI failed: %s", e)
+            res = None
+        if res:
+            if res["titles"]:
+                last_search_results[uid] = res["titles"]
+                await update.message.reply_text(res["reply"], reply_markup=build_results_keyboard(res["titles"], 0))
+                return
+            if res["wants_title"]:
+                pending_request[uid] = raw_query
+                waiting = pending_requests.setdefault(raw_query.strip().lower(), [])
+                if uid not in waiting:
+                    waiting.append(uid)
+                    save_state("requests", REQUESTS_FILE, pending_requests)
+                user = update.effective_user
+                name = f"@{user.username}" if user.username else (user.full_name or str(uid))
+                try:
+                    await context.bot.send_message(chat_id=ADMIN_ID, text=f"{t(ADMIN_ID, 'admin_new_request')} {name} (id: {uid}):\n{raw_query}")
+                except Exception:
+                    pass
+                cat_text, cat_markup = render_category_level(uid, [])
+                rm = cat_markup if (cat_text and cat_markup.inline_keyboard) else None
+                await update.message.reply_text(res["reply"], reply_markup=rm)
+                return
+            await update.message.reply_text(res["reply"])
+            return
 
     matches = fuzzy_search(raw_query, db.keys())
 
@@ -2678,6 +2809,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("removecategory", remove_category))
     application.add_handler(CommandHandler("clearcategories", clear_categories))
     application.add_handler(CommandHandler("treestyle", tree_style_command))
+    application.add_handler(CommandHandler("ai", ai_toggle_command))
     application.add_handler(CommandHandler("categoryafter", category_after))
     application.add_handler(CommandHandler("wrapcategory", wrap_category))
     application.add_handler(CommandHandler("buildcategories", build_categories))
