@@ -6,6 +6,8 @@ import asyncio
 import difflib
 import re
 import random
+import html as _html
+import time as _time_mod
 from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup as _OrigMarkup, BotCommand, ForceReply, InputMediaPhoto
@@ -123,6 +125,9 @@ category_return_path = {}    # user_id -> category path to return to when Back i
 awaiting_poster = {}   # admin এখন কোন টাইটেলের জন্য ছবি পাঠাবে (ট্রানজিয়েন্ট)
 user_download_history = load_state("download_history", DOWNLOAD_HISTORY_FILE, {})   # str(user_id) -> [title, ...] (সর্বশেষ কয়েকটা)
 HISTORY_LIMIT = 15
+SESSIONS_FILE = "sessions.json"
+user_sessions = load_state("sessions", SESSIONS_FILE, {})   # str(user_id) -> [{"s": শুরু, "e": শেষ, "n": অ্যাক্টিভিটি-সংখ্যা}, ...]
+_sess_saved_at = [0.0]
 
 # ---------- লোডিং/প্রসেসিং টেক্সট-অ্যানিমেশন (একটা মেসেজ নিজেই বদলে বদলে দেখায়, ChatGPT/DeepSeek-স্টাইল) ----------
 LOADING_FRAME_SETS = [
@@ -150,6 +155,36 @@ def register_user(user_id: int, tg_user=None):
             user_names[key] = name
             save_state("user_names", USER_NAMES_FILE, user_names)
 
+def touch_user(user_id: int):
+    """ইউজার বটে কখন ঢুকল/কতক্ষণ ছিল তার হিসাব (২০ মিনিট চুপ থাকলে নতুন সেশন)।"""
+    now = datetime.now(timezone.utc)
+    lst = user_sessions.setdefault(str(user_id), [])
+    new_session = True
+    if lst:
+        try:
+            last_end = datetime.fromisoformat(lst[-1]["e"])
+            if (now - last_end).total_seconds() <= 1200:
+                lst[-1]["e"] = now.isoformat()
+                lst[-1]["n"] = lst[-1].get("n", 1) + 1
+                new_session = False
+        except Exception:
+            pass
+    if new_session:
+        lst.append({"s": now.isoformat(), "e": now.isoformat(), "n": 1})
+        del lst[:-30]
+    if new_session or _time_mod.monotonic() - _sess_saved_at[0] > 20:
+        _sess_saved_at[0] = _time_mod.monotonic()
+        save_state("sessions", SESSIONS_FILE, user_sessions)
+
+async def touch_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    u = update.effective_user
+    if u:
+        try:
+            register_user(u.id, u)
+            touch_user(u.id)
+        except Exception:
+            pass
+
 # ---------- ভাষা ----------
 LANGUAGES = {
     "en": "English",
@@ -168,6 +203,7 @@ TEXTS = {
         "search_prompt": "🎬 Search any movie or song yourself — just type its name.\n🤖 Or chat with our AI assistant, it'll find it for you 😊",
         "results": "Results:",
         "not_found": "Not found.",
+        "not_found_request": "😕 Sorry, this isn't available yet.\n🙏 Don't worry — it will be uploaded in a few days, and we'll notify you here as soon as it's ready! 🎬",
         "select_quality": "Select quality:",
         "content_unavailable": "This content is no longer available.",
         "link_not_found": "Link not found.",
@@ -212,6 +248,7 @@ TEXTS = {
         "search_prompt": "🎬 आप खुद कोई भी मूवी या गाना सर्च कर सकते हैं — बस उसका नाम लिखें।\n🤖 या हमारे AI असिस्टेंट से बात करें, वो आपके लिए ढूंढ देगा 😊",
         "results": "परिणाम:",
         "not_found": "कुछ नहीं मिला।",
+        "not_found_request": "😕 माफ़ कीजिए, यह अभी उपलब्ध नहीं है।\n🙏 चिंता न करें — कुछ ही दिनों में इसे अपलोड कर दिया जाएगा और तैयार होते ही हम आपको यहीं बता देंगे! 🎬",
         "select_quality": "क्वालिटी चुनें:",
         "content_unavailable": "यह सामग्री अब उपलब्ध नहीं है।",
         "link_not_found": "लिंक नहीं मिला।",
@@ -256,6 +293,7 @@ TEXTS = {
         "search_prompt": "🎬 আপনি নিজেই যেকোনো মুভি বা গান সার্চ করতে পারেন — শুধু নামটা লিখুন।\n🤖 অথবা আমাদের AI সহকারীর সাথে গল্প করুন, সে খুঁজে দেবে 😊",
         "results": "রেজাল্ট:",
         "not_found": "কিছু পাওয়া যায়নি।",
+        "not_found_request": "😕 দুঃখিত, এটি এখনো আমাদের কাছে নেই।\n🙏 চিন্তা করবেন না — কয়েক দিনের মধ্যেই এটি আপলোড করে দেওয়া হবে, আর তৈরি হলেই এখানে আপনাকে জানিয়ে দেব! 🎬",
         "select_quality": "কোয়ালিটি সিলেক্ট করো:",
         "content_unavailable": "এই কনটেন্ট আর পাওয়া যাচ্ছে না।",
         "link_not_found": "লিংক পাওয়া যায়নি।",
@@ -300,6 +338,7 @@ TEXTS = {
         "search_prompt": "🎬 நீங்களே எந்த திரைப்படம் அல்லது பாடலையும் தேடலாம் — பெயரை தட்டச்சு செய்யுங்கள்.\n🤖 அல்லது எங்கள் AI உதவியாளரிடம் பேசுங்கள், அவர் தேடித் தருவார் 😊",
         "results": "முடிவுகள்:",
         "not_found": "எதுவும் கிடைக்கவில்லை.",
+        "not_found_request": "😕 மன்னிக்கவும், இது இன்னும் கிடைக்கவில்லை.\n🙏 கவலை வேண்டாம் — சில நாட்களில் பதிவேற்றப்படும், தயாரானதும் இங்கேயே உங்களுக்குத் தெரிவிப்போம்! 🎬",
         "select_quality": "தரத்தைத் தேர்ந்தெடுக்கவும்:",
         "content_unavailable": "இந்த உள்ளடக்கம் இனி கிடைக்கவில்லை.",
         "link_not_found": "இணைப்பு கிடைக்கவில்லை.",
@@ -344,6 +383,7 @@ TEXTS = {
         "search_prompt": "🎬 మీరే ఏ సినిమా లేదా పాటనైనా సెర్చ్ చేయవచ్చు — పేరు టైప్ చేయండి.\n🤖 లేదా మా AI అసిస్టెంట్‌తో మాట్లాడండి, అది వెతికి ఇస్తుంది 😊",
         "results": "ఫలితాలు:",
         "not_found": "ఏమీ కనుగొనబడలేదు.",
+        "not_found_request": "😕 క్షమించండి, ఇది ఇంకా అందుబాటులో లేదు.\n🙏 ఆందోళన వద్దు — కొన్ని రోజుల్లో అప్‌లోడ్ చేస్తాం, సిద్ధమైన వెంటనే ఇక్కడే మీకు తెలియజేస్తాం! 🎬",
         "select_quality": "క్వాలిటీని ఎంచుకోండి:",
         "content_unavailable": "ఈ కంటెంట్ ఇకపై అందుబాటులో లేదు.",
         "link_not_found": "లింక్ కనుగొనబడలేదు.",
@@ -388,6 +428,7 @@ TEXTS = {
         "search_prompt": "🎬 तुम्ही स्वतः कोणताही चित्रपट किंवा गाणे शोधू शकता — फक्त नाव टाइप करा.\n🤖 किंवा आमच्या AI असिस्टंटशी गप्पा मारा, तो शोधून देईल 😊",
         "results": "निकाल:",
         "not_found": "काही सापडले नाही.",
+        "not_found_request": "😕 क्षमस्व, हे अजून उपलब्ध नाही.\n🙏 काळजी नको — काही दिवसांत अपलोड केले जाईल आणि तयार होताच इथेच तुम्हाला कळवू! 🎬",
         "select_quality": "गुणवत्ता निवडा:",
         "content_unavailable": "ही सामग्री यापुढे उपलब्ध नाही.",
         "link_not_found": "लिंक सापडली नाही.",
@@ -432,6 +473,7 @@ TEXTS = {
         "search_prompt": "🎬 તમે જાતે કોઈપણ મૂવી કે ગીત શોધી શકો છો — બસ નામ લખો.\n🤖 અથવા અમારા AI આસિસ્ટન્ટ સાથે વાત કરો, તે શોધી આપશે 😊",
         "results": "પરિણામો:",
         "not_found": "કંઈ મળ્યું નથી.",
+        "not_found_request": "😕 માફ કરશો, આ હજુ ઉપલબ્ધ નથી.\n🙏 ચિંતા ન કરો — થોડા દિવસોમાં અપલોડ થઈ જશે અને તૈયાર થતાં જ અહીં જ તમને જણાવીશું! 🎬",
         "select_quality": "ગુણવત્તા પસંદ કરો:",
         "content_unavailable": "આ સામગ્રી હવે ઉપલબ્ધ નથી.",
         "link_not_found": "લિંક મળી નથી.",
@@ -1200,63 +1242,151 @@ def to_local_time(iso_str: str) -> str:
     except Exception:
         return iso_str[:16].replace("T", " ")
 
+_USER_EMOJIS = ["🦁","🐯","🦊","🐼","🐨","🐸","🦄","🐙","🦋","🐳","🐵","🐰","🐶","🐱","🦉","🐧","🐢","🦅","🐬","🌟",
+                "🔥","🍀","🎯","🚀","💎","🎈","🌈","🍉","🎸","⚡","🍕","🎮","🏆","🌻","🍩","🛸","🎨","🧩","🪁","🦖"]
+
+def user_emoji(u):
+    ids = sorted(known_users)
+    idx = ids.index(u) if u in ids else u
+    return _USER_EMOJIS[idx % len(_USER_EMOJIS)]
+
+def _req_html(uid, name, query):
+    return (f"{t(ADMIN_ID, 'admin_new_request')} <a href=\"tg://user?id={uid}\">{_html.escape(str(name))}</a> "
+            f"(id: {uid}):\n{_html.escape(str(query))}")
+
+async def _user_name(context, u):
+    name = user_names.get(str(u))
+    if not name:
+        try:
+            chat = await context.bot.get_chat(u)
+            name = f"@{chat.username}" if chat.username else (chat.full_name or str(u))
+            user_names[str(u)] = name
+            save_state("user_names", USER_NAMES_FILE, user_names)
+        except Exception:
+            name = str(u)
+    return name
+
+def _fmt_session(sess):
+    try:
+        st = datetime.fromisoformat(sess["s"]) + BD_OFFSET
+        en = datetime.fromisoformat(sess["e"]) + BD_OFFSET
+        mins = max(0, int((en - st).total_seconds() // 60))
+        dur = f"{mins // 60} ঘণ্টা {mins % 60} মিনিট" if mins >= 60 else (f"{mins} মিনিট" if mins >= 1 else "১ মিনিটের কম")
+        return f"{st.strftime('%d %b, %I:%M %p')} → {en.strftime('%I:%M %p')} ({dur}) [{sess.get('n', 1)} অ্যাক্টিভিটি]", mins
+    except Exception:
+        return "", 0
+
+def user_report(u):
+    name = user_names.get(str(u), str(u))
+    lines = [f"{user_emoji(u)} {name} (id {u})"]
+    sess = user_sessions.get(str(u), [])
+    if sess:
+        total = 0
+        lines.append("🕒 বটে ছিল (ভারতীয় সময়, সর্বশেষ ১০টা সেশন):")
+        for sx in sess[-10:]:
+            txt, mins = _fmt_session(sx)
+            total += mins
+            lines.append(f"   • {txt}")
+        lines.append(f"⏱ এই সেশনগুলোতে মোট: {total} মিনিট")
+    searched = user_search_history.get(str(u), [])
+    if searched:
+        lines.append("🔍 সার্চ করেছে:")
+        for x in searched:
+            if isinstance(x, dict):
+                when = to_local_time(x.get("t", ""))
+                lines.append(f"   • {x.get('q','')} ({when})" if when else f"   • {x.get('q','')}")
+            else:
+                lines.append(f"   • {x}")
+    downloaded = user_download_history.get(str(u), [])
+    if downloaded:
+        lines.append("⬇️ ডাউনলোড/ওপেন করেছে:")
+        for x in downloaded:
+            if isinstance(x, dict):
+                when = to_local_time(x.get("t", ""))
+                lines.append(f"   • {x.get('title','')} ({when})" if when else f"   • {x.get('title','')}")
+            else:
+                lines.append(f"   • {x}")
+    waiting = [k for k, v in pending_requests.items() if u in v]
+    if waiting:
+        lines.append("📩 যা খুঁজে পায়নি (আপলোড হলে জানানো হবে):")
+        lines += [f"   • {k}" for k in waiting]
+    if len(lines) == 1:
+        lines.append("কোনো তথ্য নেই।")
+    return "\n".join(lines)
+
+def find_users(q):
+    q = q.strip().lstrip("@").lower()
+    if not q:
+        return []
+    ids = sorted(known_users)
+    if q.isdigit():
+        n = int(q)
+        if 1 <= n <= len(ids):
+            return [ids[n - 1]]
+        return [n] if n in known_users else []
+    return [u for u in ids if q in user_names.get(str(u), "").lstrip("@").lower()]
+
+async def _send_chunks(msg, text, **kw):
+    chunk = ""
+    for line in text.split("\n"):
+        if len(chunk) + len(line) + 1 > 3800:
+            await msg.reply_text(chunk, **kw)
+            chunk = ""
+        chunk += line + "\n"
+    if chunk.strip():
+        await msg.reply_text(chunk, **kw)
+
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     uid = update.effective_user.id
-    total_titles = len(db)
+    parts = (update.message.text or "").split(" ", 1)
+    if len(parts) > 1 and parts[1].strip():
+        found = find_users(parts[1])
+        if not found:
+            await update.message.reply_text("😕 এই নামে কেউ নেই।")
+            return
+        for u in found[:3]:
+            await _send_chunks(update.message, user_report(u))
+        return
     total_links = sum(count_links(node) for node in db.values())
-    total_users = len(known_users)
-
     all_lines = [
-        t(uid, "admin_stats_header"),
-        f"{t(uid, 'admin_stats_titles')} {total_titles}",
-        f"{t(uid, 'admin_stats_links')} {total_links}",
-        f"{t(uid, 'admin_stats_users')} {total_users}",
+        _html.escape(t(uid, "admin_stats_header")),
+        f"{_html.escape(t(uid, 'admin_stats_titles'))} {len(db)}",
+        f"{_html.escape(t(uid, 'admin_stats_links'))} {total_links}",
+        f"{_html.escape(t(uid, 'admin_stats_users'))} {len(known_users)}",
         "",
     ]
-    names_changed = False
-    for u in known_users:
-        name = user_names.get(str(u))
-        if not name:
-            try:
-                chat = await context.bot.get_chat(u)
-                name = f"@{chat.username}" if chat.username else (chat.full_name or str(u))
-                user_names[str(u)] = name
-                names_changed = True
-            except Exception:
-                name = str(u)
-        searched = user_search_history.get(str(u), [])
-        downloaded = user_download_history.get(str(u), [])
-        line = f"- {name}"
-        if searched:
-            line += "\n    Searched:"
-            for s in searched:
-                if isinstance(s, dict):
-                    when = to_local_time(s.get("t", ""))
-                    line += f"\n      {s.get('q','')} ({when})" if when else f"\n      {s.get('q','')}"
-                else:
-                    line += f"\n      {s}"
-        if downloaded:
-            line += "\n    Downloaded:"
-            for d in downloaded:
-                if isinstance(d, dict):
-                    when = to_local_time(d.get("t", ""))
-                    line += f"\n      {d.get('title','')} ({when})" if when else f"\n      {d.get('title','')}"
-                else:
-                    line += f"\n      {d}"
-        all_lines.append(line)
-    if names_changed:
-        save_state("user_names", USER_NAMES_FILE, user_names)
+    for i, u in enumerate(sorted(known_users), 1):
+        name = await _user_name(context, u)
+        all_lines.append(f"{user_emoji(u)} {i}. <a href=\"tg://user?id={u}\">{_html.escape(name)}</a>")
+    all_lines += ["", "👆 নামে ক্লিক করলে তার প্রোফাইল খুলবে।",
+                  "🤖 কারও কাজ জানতে বটে লেখো: <i>রহিম কি কি করেছে?</i>  অথবা  /stats নাম  (বা নম্বর)"]
+    await _send_chunks(update.message, "\n".join(all_lines), parse_mode="HTML")
 
-    chunk = ""
-    for line in all_lines:
-        if len(chunk) + len(line) + 1 > 3900:
-            await update.message.reply_text(chunk)
-            chunk = ""
-        chunk += line + "\n"
-    if chunk.strip():
-        await update.message.reply_text(chunk)
+async def admin_user_question(update: Update, text: str) -> bool:
+    """অ্যাডমিন সাধারণ লেখায় কোনো ইউজারের নাম লিখে প্রশ্ন করলে Gemini তার ডাটা দেখে ইমোজিসহ উত্তর দেয়।"""
+    low = text.lower()
+    hits = [u for u in sorted(known_users)
+            if len(user_names.get(str(u), "").lstrip("@")) >= 3 and user_names[str(u)].lstrip("@").lower() in low][:2]
+    if not hits:
+        return False
+    data = "\n\n".join(user_report(u) for u in hits)
+    system_text = (
+        "You help the owner of a Telegram movie bot. Below is recorded data about one or two users "
+        "(times are Indian time). Answer the owner's question using ONLY this data, in the same language he writes in, "
+        "clearly and briefly, with a fitting emoji in front of every item (e.g. 🔍 search, ⬇️ download, 🕒 time, ⏱ duration, 📩 not found). "
+        "Keep each user's emoji next to his name. Never invent data.\n"
+        "Reply with JSON only: {\"reply\": string}.\n\nDATA:\n" + data
+    )
+    try:
+        res = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(
+            None, _gemini_call, system_text, [{"role": "user", "parts": [{"text": text[:800]}]}]), timeout=40)
+        reply = str(res.get("reply", "")).strip()
+    except Exception:
+        reply = ""
+    await _send_chunks(update.message, reply or data)
+    return True
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1679,7 +1809,7 @@ async def ai_answer(uid, user_text):
         "A franchise name matches ALL its titles/parts/seasons in the list (e.g. Spider-Man -> every Spider-Man title). Ignore extra words like movie, film, দাও, খুঁজে দাও, चाहिए, Hindi, dubbed, 2023. "
         "Put every matching title in \"titles\", copied EXACTLY as written in the list (max 8). NEVER invent a title and NEVER give links. "
         "Before deciding something is missing, re-check the whole list carefully for a phonetic or partial match in English. "
-        "ONLY if there is truly no match: say politely (in the user's language) that it is not available yet and the owner has been informed, "
+        "ONLY if there is truly no match: say politely (in the user's language) that it is not available yet, that it will be uploaded within a few days, and that they will be notified here as soon as it is ready, "
         "set \"wants_title\" true and leave \"titles\" empty. "
         "When you do find matches, write the reply in the user's language and mention the movie name in the user's own script plus the English title once. "
         "If it is just general chat, set \"wants_title\" false and \"titles\" empty.\n"
@@ -1733,6 +1863,9 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
         return
     uid = update.effective_user.id
     register_user(uid, update.effective_user)
+    if uid == ADMIN_ID and ai_enabled():
+        if await admin_user_question(update, raw_query):
+            return
 
     hist = user_search_history.setdefault(str(uid), [])
     hist.append({"q": raw_query, "t": datetime.now(timezone.utc).isoformat()})
@@ -1762,7 +1895,7 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
                 user = update.effective_user
                 name = f"@{user.username}" if user.username else (user.full_name or str(uid))
                 try:
-                    await context.bot.send_message(chat_id=ADMIN_ID, text=f"{t(ADMIN_ID, 'admin_new_request')} {name} (id: {uid}):\n{raw_query}")
+                    await context.bot.send_message(chat_id=ADMIN_ID, text=_req_html(uid, name, raw_query), parse_mode="HTML")
                 except Exception:
                     pass
                 cat_text, cat_markup = render_category_level(uid, [])
@@ -1786,13 +1919,13 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"{t(ADMIN_ID, 'admin_new_request')} {name} (id: {uid}):\n{raw_query}"
+                text=_req_html(uid, name, raw_query), parse_mode="HTML"
             )
         except Exception:
             pass
         cat_text, cat_markup = render_category_level(uid, [])
         reply_markup = cat_markup if (cat_text and cat_markup.inline_keyboard) else None
-        await update.message.reply_text(t(uid, "not_found"), reply_markup=reply_markup)
+        await update.message.reply_text(t(uid, "not_found_request"), reply_markup=reply_markup)
         return
 
     last_search_results[uid] = matches
@@ -1859,7 +1992,7 @@ async def request_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"{t(ADMIN_ID, 'admin_new_request')} @{username} (id: {uid}):\n{text}"
+                text=_req_html(uid, "@" + username, text), parse_mode="HTML"
             )
         except Exception:
             pass
@@ -2915,6 +3048,268 @@ async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ---------- webhook মোড (Render-এর জন্য) ----------
+# ---------- Google Drive থেকে অটো ইমপোর্ট (/syncdrive, /drivemap) ----------
+import urllib.parse as _urlparse
+import urllib.error as _urlerr
+DRIVE_KEY = os.environ.get("DRIVE_API_KEY", "").strip()
+_VIDEO_EXT = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts")
+_CUT = re.compile(r"\b((?:19|20)\d{2}|2160p|1080p|720p|480p|360p|4k|s\d{1,2}[ ._-]*e\d{1,3}|bluray|blu-ray|brrip|bdrip|"
+                  r"webrip|web-dl|webdl|hdrip|hdtc|hdcam|dvdrip|remux|hindi|english|dual|multi|org|hevc|x264|x265|10bit|esubs?|v2)\b", re.I)
+
+def parse_drive_name(name):
+    stem = name.rsplit(".", 1)[0] if name.lower().endswith(_VIDEO_EXT) else name
+    norm = re.sub(r"[\[\](){}]", " ", stem)
+    norm = re.sub(r"[_.]+", " ", norm)
+    norm = re.sub(r"\s+", " ", norm).strip()
+    m_se = re.search(r"\bs(\d{1,2})[ ._-]*e(\d{1,3})\b", norm, re.I)
+    m_q = re.search(r"\b(2160|1080|720|480|360)p\b", norm, re.I)
+    quality = (m_q.group(1) + "p") if m_q else ("4K" if re.search(r"\b4k\b", norm, re.I) else "Original")
+    cut = next((m for m in _CUT.finditer(norm) if m.start() > 0), None)
+    base = norm[:cut.start()] if cut else norm
+    base = base.strip(" -")
+    year = None
+    if not m_se:
+        ym = next((m for m in re.finditer(r"\b((?:19|20)\d{2})\b", norm) if m.start() >= len(base)), None)
+        year = ym.group(1) if ym else None
+    title = base + (f" {year}" if year else "")
+    if re.search(r"\bhindi\b", norm, re.I):
+        title += " Hindi"
+    return {
+        "title": title.strip() or stem,
+        "series": bool(m_se),
+        "season": f"Season {int(m_se.group(1))}" if m_se else None,
+        "episode": f"Episode {int(m_se.group(2))}" if m_se else None,
+        "quality": quality,
+    }
+
+def _drive_api(path, params):
+    params = dict(params)
+    params["key"] = DRIVE_KEY
+    url = "https://www.googleapis.com/drive/v3/" + path + "?" + _urlparse.urlencode(params)
+    with _urlreq.urlopen(url, timeout=25) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+def _drive_scan(root_id, max_folders=600):
+    info = _drive_api("files/" + root_id, {"fields": "name", "supportsAllDrives": "true"})
+    root_name = info.get("name", root_id)
+    files, queue, seen = [], [(root_id, [root_name])], 0
+    while queue:
+        fid, path = queue.pop(0)
+        seen += 1
+        if seen > max_folders:
+            break
+        token = None
+        while True:
+            p = {"q": f"'{fid}' in parents and trashed=false",
+                 "fields": "nextPageToken,files(id,name,mimeType)", "pageSize": "1000",
+                 "supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}
+            if token:
+                p["pageToken"] = token
+            data = _drive_api("files", p)
+            for f in data.get("files", []):
+                mt = f.get("mimeType", "")
+                if mt == "application/vnd.google-apps.folder":
+                    queue.append((f["id"], path + [f["name"]]))
+                elif mt.startswith("video/") or f["name"].lower().endswith(_VIDEO_EXT):
+                    files.append((path, f["name"], f["id"]))
+            token = data.get("nextPageToken")
+            if not token:
+                break
+    return root_name, files
+
+def _existing_drive_ids():
+    ids = set()
+    def walk(n):
+        if isinstance(n, dict):
+            for v in n.values():
+                walk(v)
+        elif isinstance(n, str):
+            m = re.search(r"/d/([\w-]{20,})|[?&]id=([\w-]{20,})", n)
+            if m:
+                ids.add(m.group(1) or m.group(2))
+    walk(db)
+    return ids
+
+def _drive_category_for(path):
+    dm = bot_settings.get("drive_map", {})
+    for i in range(len(path), 0, -1):
+        key = "/".join(path[:i]).lower()
+        if key in dm:
+            return dm[key]["cat"]
+    return None
+
+def _tree_add(cat, title, nested_path):
+    node = category_tree
+    for seg in cat:
+        node = node.setdefault(seg, {})
+    node.setdefault("_titles", [])
+    if any(isinstance(e, dict) and e.get("title") == title and e.get("path", []) == nested_path for e in node["_titles"]):
+        return False
+    display = title if not nested_path else " - ".join(nested_path)
+    node["_titles"].append({"title": title, "path": nested_path, "display": display})
+    return True
+
+async def drivemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/drivemap MCU/MAIN UNIVERS | Hollywood | Marvel | Main Universe  — Drive ফোল্ডার -> বটের ক্যাটাগরি"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split(" ", 1)
+    dm = bot_settings.setdefault("drive_map", {})
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    if not arg:
+        if not dm:
+            await update.message.reply_text("কোনো ম্যাপ নেই।\n/drivemap MCU | Hollywood | Marvel")
+            return
+        await update.message.reply_text("🗂 ম্যাপ:\n" + "\n".join(f"{v['drive']}  →  {' / '.join(v['cat'])}" for v in dm.values()))
+        return
+    if arg.lower() == "clear":
+        bot_settings["drive_map"] = {}
+        save_state("settings", SETTINGS_FILE, bot_settings)
+        await update.message.reply_text("✅ সব ম্যাপ মোছা হয়েছে।")
+        return
+    segs = [s.strip() for s in arg.split("|")]
+    if len(segs) < 2 or not all(segs):
+        await update.message.reply_text("ফরম্যাট:\n/drivemap MCU/MAIN UNIVERS | Hollywood | Marvel | Main Universe")
+        return
+    drive_path = "/".join(p.strip() for p in segs[0].split("/"))
+    dm[drive_path.lower()] = {"drive": drive_path, "cat": segs[1:]}
+    save_state("settings", SETTINGS_FILE, bot_settings)
+    await update.message.reply_text(f"✅ {drive_path}  →  {' / '.join(segs[1:])}")
+
+def _folder_id_from(text):
+    m = re.search(r"folders/([\w-]{10,})", text) or re.search(r"[?&]id=([\w-]{10,})", text)
+    if m:
+        return m.group(1)
+    return text if re.fullmatch(r"[\w-]{15,}", text) else None
+
+async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/syncdrive <ফোল্ডার লিংক> [আরও লিংক] — স্ক্যান করে প্রিভিউ দেখায়, OK দিলে বসায়।"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    msg = update.message
+    if not DRIVE_KEY:
+        await msg.reply_text("❌ Render-এ DRIVE_API_KEY নেই।")
+        return
+    args = (msg.text or "").split()[1:]
+    ids = [x for x in (_folder_id_from(a) for a in args) if x]
+    if not ids:
+        await msg.reply_text("ফরম্যাট:\n/syncdrive https://drive.google.com/drive/folders/XXXX")
+        return
+    await msg.reply_text("⏳ ড্রাইভ স্ক্যান হচ্ছে, একটু অপেক্ষা করো...")
+    existing = _existing_drive_ids()
+    plan, seen_keys = [], set()
+    skipped_old = dup = 0
+    try:
+        for rid in ids:
+            root_name, files = await asyncio.to_thread(_drive_scan, rid)
+            for path, name, fid in files:
+                if fid in existing:
+                    skipped_old += 1
+                    continue
+                info = parse_drive_name(name)
+                key = (info["title"].lower(), info["season"], info["episode"], info["quality"])
+                if key in seen_keys:
+                    dup += 1
+                    continue
+                seen_keys.add(key)
+                info.update({"link": f"https://drive.google.com/file/d/{fid}/view", "cat": _drive_category_for(path), "name": name})
+                plan.append(info)
+    except _urlerr.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "ignore")[:300]
+        except Exception:
+            pass
+        hint = "ফোল্ডার 'Anyone with the link' করা আছে? Drive API চালু?" if e.code in (403, 404) else ""
+        await msg.reply_text(f"❌ Drive error {e.code}. {hint}\n{body}")
+        return
+    except Exception as e:
+        await msg.reply_text(f"❌ ত্রুটি: {e}")
+        return
+    if not plan:
+        await msg.reply_text(f"নতুন কিছু নেই। (আগে থেকেই আছে: {skipped_old})")
+        return
+    context.bot_data["drive_plan"] = plan
+    groups = {}
+    for it in plan:
+        groups.setdefault((it["title"], tuple(it["cat"] or ())), []).append(it)
+    lines = []
+    for (title, cat), its in groups.items():
+        if its[0]["series"]:
+            sc = {}
+            for it in its:
+                sc[it["season"]] = sc.get(it["season"], 0) + 1
+            detail = ", ".join(f"S{k.split()[-1]}:{v}ep" for k, v in sc.items()) + f" {its[0]['quality']}"
+        else:
+            detail = ", ".join(sorted({i["quality"] for i in its}))
+        lines.append(f"• {title} ({detail}) → {' / '.join(cat) if cat else '⚠️ ক্যাটাগরি নেই'}")
+    header = (f"📋 প্রিভিউ\n🆕 নতুন ফাইল: {len(plan)} | ⏭ আগে থেকেই আছে: {skipped_old} | 🔁 ডুপ্লিকেট: {dup}\n"
+              f"🎬 টাইটেল: {len(groups)}\n\n")
+    chunks, cur = [], header
+    for ln in lines:
+        if len(cur) + len(ln) > 3500:
+            chunks.append(cur)
+            cur = ""
+        cur += ln + "\n"
+    chunks.append(cur)
+    for c in chunks[:-1]:
+        await msg.reply_text(c)
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("✅ বসাও", callback_data="sd_ok"),
+                                InlineKeyboardButton("❌ বাতিল", callback_data="sd_no")]])
+    await msg.reply_text(chunks[-1], reply_markup=kb)
+
+async def drive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if q.from_user.id != ADMIN_ID:
+        await q.answer()
+        return
+    await q.answer()
+    plan = context.bot_data.pop("drive_plan", None)
+    if q.data == "sd_no" or not plan:
+        await q.message.reply_text("বাতিল (বা প্রিভিউ পুরনো, আবার /syncdrive দাও)।")
+        return
+    added = skipped = 0
+    new_titles, nocat = set(), set()
+    now = datetime.now(timezone.utc).isoformat()
+    for it in plan:
+        title = find_existing_title(it["title"])
+        cur = db.get(title)
+        if it["series"]:
+            if cur and is_leaf_level(cur):
+                skipped += 1
+                continue
+            node = db.setdefault(title, {}).setdefault(it["season"], {})
+            if node and is_leaf_level(node):
+                skipped += 1
+                continue
+            node.setdefault(it["episode"], {})[it["quality"]] = it["link"]
+            nested = [it["season"]]
+        else:
+            if cur and not is_leaf_level(cur):
+                skipped += 1
+                continue
+            db.setdefault(title, {})[it["quality"]] = it["link"]
+            nested = []
+        added += 1
+        if title not in new_titles:
+            new_titles.add(title)
+            title_meta.setdefault(title, {})["added_at"] = now
+        if it["cat"]:
+            _tree_add(it["cat"], title, nested)
+        else:
+            nocat.add(title)
+    save_state("content", DB_FILE, db)
+    save_state("meta", META_FILE, title_meta)
+    save_state("categories", CATEGORY_FILE, category_tree)
+    await q.message.reply_text(
+        f"✅ হয়ে গেছে!\n🆕 যোগ: {added} ফাইল ({len(new_titles)} টাইটেল)\n⏭ বাদ: {skipped}\n"
+        f"⚠️ ক্যাটাগরি ছাড়া: {len(nocat)} টাইটেল" + (f"\n{', '.join(sorted(nocat)[:15])}" if nocat else ""))
+    for t_ in list(new_titles)[:30]:
+        try:
+            await notify_fulfilled_requests(context, t_)
+        except Exception:
+            pass
+
 async def run_webhook_server(application: Application, base_url: str, port: int):
     await application.bot.set_webhook(url=f"{base_url}/{BOT_TOKEN}")
 
@@ -2992,6 +3387,7 @@ def build_application() -> Application:
     application.add_handler(TypeHandler(Update, show_typing), group=-3)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, capture_pending_text), group=-2)
     application.add_handler(TypeHandler(Update, stop_typing), group=5)
+    application.add_handler(TypeHandler(Update, touch_all), group=-2)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
@@ -3029,6 +3425,9 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("feedback", feedback_command))
     application.add_handler(CommandHandler("support", support_command))
     application.add_handler(CommandHandler("removeloading", remove_loading_animation))
+    application.add_handler(CommandHandler("syncdrive", sync_drive))
+    application.add_handler(CommandHandler("drivemap", drivemap_command))
+    application.add_handler(CallbackQueryHandler(drive_confirm, pattern=r"^sd_(ok|no)$"))
     application.add_handler(CallbackQueryHandler(reset_confirm, pattern=r"^reset_"))
     application.add_handler(CallbackQueryHandler(begin_flow, pattern=r"^begin$"))
     application.add_handler(CallbackQueryHandler(set_language, pattern=r"^lang::"))
