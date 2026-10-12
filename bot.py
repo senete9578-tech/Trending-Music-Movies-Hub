@@ -475,9 +475,20 @@ TEXTS = {
 def get_lang(user_id: int) -> str:
     return user_lang.get(str(user_id), "en")
 
+_EMOJI_PREFIX = {
+    "choose_language": "🌐 ", "language_set": "✅ ", "results": "🎬 ", "not_found": "😕 ",
+    "select_quality": "🎞️ ", "select_option": "👇 ", "content_unavailable": "⚠️ ", "link_not_found": "⚠️ ",
+    "download_link": "⬇️ ", "request_button": "📩 ", "request_sent": "📩 ", "thank_you": "🎉 ",
+    "request_fulfilled": "🎊 ",
+}
+
 def t(user_id: int, key: str) -> str:
     lang = get_lang(user_id)
-    return TEXTS.get(lang, TEXTS["en"]).get(key) or TEXTS["en"][key]
+    txt = TEXTS.get(lang, TEXTS["en"]).get(key) or TEXTS["en"][key]
+    pre = _EMOJI_PREFIX.get(key)
+    if pre and txt and not any(ord(c) > 0x2000 for c in txt[:2]):
+        return pre + txt
+    return txt
 
 def _normalize_label(s):
     return re.sub(r"[\s\-_]+", " ", s.strip().lower()).strip()
@@ -1660,7 +1671,7 @@ async def ai_answer(uid, user_text):
         "The bot owner shares movies, web series and songs as download links. "
         "You can chat about ANYTHING (general questions, movies, songs, help), like a helpful chatbot. "
         "ALWAYS reply in the same language and script the user writes in (Bengali, Hindi, English, etc.). "
-        "Keep replies short (1-4 sentences), warm and natural.\n"
+        "Keep replies short (1-4 sentences), warm and natural, with a few fitting emojis (like 🎬 🍿 😊 ✨) placed naturally.\n"
         "RULES FOR MOVIES/SONGS: AVAILABLE_TITLES below are written in ENGLISH (Latin letters), but users may type in ANY language or script "
         "(Bengali, Hindi, Tamil, Telugu, Marathi, Gujarati, Urdu, Arabic, Hinglish, typos, etc.). "
         "You MUST translate/transliterate the user's words to English in your head and match them to the English titles by SOUND and MEANING. "
@@ -1787,8 +1798,46 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     last_search_results[uid] = matches
     await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
 
+_WAIT_FRAMES = ["🔍 🎬 🍿 🎵", "🎬 🔍 🍿 🎵", "🎬 🍿 🔍 🎵", "🎬 🍿 🎵 🔍", "🎬 🍿 🔍 🎵", "🎬 🔍 🍿 🎵"]
+
+async def _wait_animation(bot, chat_id, holder):
+    """উত্তর আসতে দেরি হলে (০.৭ সেকেন্ডের পর) একটা অ্যানিমেটেড মেসেজ দেখায়; উত্তর এলে মুছে যায়।"""
+    try:
+        await asyncio.sleep(0.7)
+        msg = await bot.send_message(chat_id=chat_id, text=_WAIT_FRAMES[0])
+        holder["msg"] = msg
+        i = 1
+        while True:
+            await asyncio.sleep(0.9)
+            try:
+                await msg.edit_text(_WAIT_FRAMES[i % len(_WAIT_FRAMES)])
+            except Exception:
+                pass
+            i += 1
+    except asyncio.CancelledError:
+        pass
+
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await perform_search(update, context, update.message.text or "")
+    holder = {}
+    task = None
+    chat = update.effective_chat
+    if chat is not None:
+        task = asyncio.create_task(_wait_animation(context.bot, chat.id, holder))
+    try:
+        await perform_search(update, context, update.message.text or "")
+    finally:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except BaseException:
+                pass
+            m = holder.get("msg")
+            if m is not None:
+                try:
+                    await m.delete()
+                except Exception:
+                    pass
 
 async def paginate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
