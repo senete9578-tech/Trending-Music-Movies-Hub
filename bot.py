@@ -1589,34 +1589,68 @@ def _ai_rate_ok(uid):
     lst.append(now)
     return True
 
+_model_cache = {"t": 0.0, "list": []}
+GEMINI_USED = {"model": ""}
+
+def _discover_models():
+    """Google-এর কাছ থেকে এখন চালু থাকা flash মডেলের তালিকা নেয় (পুরনো নাম বন্ধ হলেও চলবে)।"""
+    now = datetime.now(timezone.utc).timestamp()
+    if _model_cache["list"] and now - _model_cache["t"] < 3600:
+        return _model_cache["list"]
+    try:
+        req = _urlreq.Request("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+                              headers={"x-goog-api-key": GEMINI_KEY})
+        with _urlreq.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        names = []
+        for m in data.get("models", []):
+            n = m.get("name", "").replace("models/", "")
+            if "generateContent" not in m.get("supportedGenerationMethods", []):
+                continue
+            if "flash" not in n or any(x in n for x in ("image", "tts", "live", "audio", "thinking", "embedding", "robotics", "computer", "exp")):
+                continue
+            names.append(n)
+        # latest-alias আগে, তারপর lite বাদে বাকি, সবশেষে lite
+        names.sort(key=lambda n: (("latest" not in n), ("lite" in n), n), reverse=False)
+        if names:
+            _model_cache["list"], _model_cache["t"] = names[:5], now
+            return _model_cache["list"]
+    except Exception:
+        pass
+    return GEMINI_MODELS
+
 def _gemini_call(system_text, contents):
+    import time as _time
     body = json.dumps({
         "systemInstruction": {"parts": [{"text": system_text}]},
         "contents": contents,
         "generationConfig": {"temperature": 0.6, "maxOutputTokens": 700, "responseMimeType": "application/json"},
     }).encode("utf-8")
-    last_err = None
-    for model in GEMINI_MODELS:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        req = _urlreq.Request(url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY})
-        try:
-            with _urlreq.urlopen(req, timeout=12) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            txt = data["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(txt)
-        except Exception as e:
-            last_err = e
-            code = getattr(e, "code", None)
-            if code in (400, 401, 403, 429):   # চাবি/কোটার সমস্যা — অন্য মডেলে চেষ্টা করে লাভ নেই
-                try:
-                    detail = e.read().decode("utf-8")[:300]
-                except Exception:
-                    detail = ""
-                raise RuntimeError(f"HTTP {code} ({model}) {detail}")
-            if code is not None and code != 404:
-                raise RuntimeError(f"HTTP {code} ({model})")
-            continue
-    raise RuntimeError(f"all models failed: {last_err}")
+    models = _discover_models() + [m for m in GEMINI_MODELS if m not in _model_cache["list"]]
+    models = models[:5]
+    errors = []
+    for attempt in range(2):
+        for model in models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            req = _urlreq.Request(url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY})
+            try:
+                with _urlreq.urlopen(req, timeout=10) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                txt = data["candidates"][0]["content"]["parts"][0]["text"]
+                GEMINI_USED["model"] = model
+                return json.loads(txt)
+            except Exception as e:
+                code = getattr(e, "code", None)
+                if code in (400, 401, 403, 429):   # চাবি/কোটার সমস্যা — অন্য মডেলে চেষ্টা করে লাভ নেই
+                    try:
+                        detail = e.read().decode("utf-8")[:300]
+                    except Exception:
+                        detail = ""
+                    raise RuntimeError(f"HTTP {code} ({model}) {detail}")
+                errors.append(f"{model}: {code or type(e).__name__}")
+                continue
+        _time.sleep(1.5)
+    raise RuntimeError("busy/unavailable -> " + "; ".join(errors[-6:]))
 
 async def ai_answer(uid, user_text):
     """Gemini-কে প্রশ্ন পাঠায়। ফেরত: {"reply": str, "titles": [...], "wants_title": bool} অথবা None।"""
@@ -1640,7 +1674,7 @@ async def ai_answer(uid, user_text):
     hist = ai_history.setdefault(uid, [])
     contents = [{"role": r, "parts": [{"text": x}]} for r, x in hist[-6:]]
     contents.append({"role": "user", "parts": [{"text": user_text[:1500]}]})
-    data = await asyncio.get_running_loop().run_in_executor(None, _gemini_call, system_text, contents)
+    data = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, _gemini_call, system_text, contents), timeout=40)
     reply = str(data.get("reply", "")).strip()
     if not reply:
         return None
@@ -1669,7 +1703,7 @@ async def ai_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         try:
             res = await ai_answer(update.effective_user.id, "Say hello in one short sentence.")
-            await update.message.reply_text(f"AI test OK:\n{res['reply'] if res else 'empty reply'}")
+            await update.message.reply_text(f"AI test OK ({GEMINI_USED['model']}):\n{res['reply'] if res else 'empty reply'}")
         except Exception as e:
             await update.message.reply_text(f"AI test FAILED:\n{str(e)[:700]}")
         return
