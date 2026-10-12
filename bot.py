@@ -165,7 +165,7 @@ TEXTS = {
     "en": {
         "choose_language": "Select your language:",
         "language_set": "Language set to English.",
-        "search_prompt": "Now type a movie or song name to search.",
+        "search_prompt": "🎬 Search any movie or song yourself — just type its name.\n🤖 Or chat with our AI assistant, it'll find it for you 😊",
         "results": "Results:",
         "not_found": "Not found.",
         "select_quality": "Select quality:",
@@ -209,7 +209,7 @@ TEXTS = {
     "hi": {
         "choose_language": "अपनी भाषा चुनें:",
         "language_set": "भाषा हिंदी में सेट कर दी गई है।",
-        "search_prompt": "अब खोजने के लिए मूवी या गाने का नाम लिखें।",
+        "search_prompt": "🎬 आप खुद कोई भी मूवी या गाना सर्च कर सकते हैं — बस उसका नाम लिखें।\n🤖 या हमारे AI असिस्टेंट से बात करें, वो आपके लिए ढूंढ देगा 😊",
         "results": "परिणाम:",
         "not_found": "कुछ नहीं मिला।",
         "select_quality": "क्वालिटी चुनें:",
@@ -253,7 +253,7 @@ TEXTS = {
     "bn": {
         "choose_language": "আপনার ভাষা নির্বাচন করুন:",
         "language_set": "ভাষা বাংলায় সেট করা হয়েছে।",
-        "search_prompt": "এখন মুভি বা গানের নাম লিখে সার্চ করুন।",
+        "search_prompt": "🎬 আপনি নিজেই যেকোনো মুভি বা গান সার্চ করতে পারেন — শুধু নামটা লিখুন।\n🤖 অথবা আমাদের AI সহকারীর সাথে গল্প করুন, সে খুঁজে দেবে 😊",
         "results": "রেজাল্ট:",
         "not_found": "কিছু পাওয়া যায়নি।",
         "select_quality": "কোয়ালিটি সিলেক্ট করো:",
@@ -297,7 +297,7 @@ TEXTS = {
     "ta": {
         "choose_language": "உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
         "language_set": "மொழி தமிழாக அமைக்கப்பட்டது.",
-        "search_prompt": "இப்போது தேட திரைப்படம் அல்லது பாடலின் பெயரை தட்டச்சு செய்யவும்.",
+        "search_prompt": "🎬 நீங்களே எந்த திரைப்படம் அல்லது பாடலையும் தேடலாம் — பெயரை தட்டச்சு செய்யுங்கள்.\n🤖 அல்லது எங்கள் AI உதவியாளரிடம் பேசுங்கள், அவர் தேடித் தருவார் 😊",
         "results": "முடிவுகள்:",
         "not_found": "எதுவும் கிடைக்கவில்லை.",
         "select_quality": "தரத்தைத் தேர்ந்தெடுக்கவும்:",
@@ -341,7 +341,7 @@ TEXTS = {
     "te": {
         "choose_language": "మీ భాషను ఎంచుకోండి:",
         "language_set": "భాష తెలుగుగా సెట్ చేయబడింది.",
-        "search_prompt": "ఇప్పుడు శోధించడానికి సినిమా లేదా పాట పేరు టైప్ చేయండి.",
+        "search_prompt": "🎬 మీరే ఏ సినిమా లేదా పాటనైనా సెర్చ్ చేయవచ్చు — పేరు టైప్ చేయండి.\n🤖 లేదా మా AI అసిస్టెంట్‌తో మాట్లాడండి, అది వెతికి ఇస్తుంది 😊",
         "results": "ఫలితాలు:",
         "not_found": "ఏమీ కనుగొనబడలేదు.",
         "select_quality": "క్వాలిటీని ఎంచుకోండి:",
@@ -385,7 +385,7 @@ TEXTS = {
     "mr": {
         "choose_language": "तुमची भाषा निवडा:",
         "language_set": "भाषा मराठी सेट केली आहे.",
-        "search_prompt": "आता शोधण्यासाठी चित्रपट किंवा गाण्याचे नाव टाइप करा.",
+        "search_prompt": "🎬 तुम्ही स्वतः कोणताही चित्रपट किंवा गाणे शोधू शकता — फक्त नाव टाइप करा.\n🤖 किंवा आमच्या AI असिस्टंटशी गप्पा मारा, तो शोधून देईल 😊",
         "results": "निकाल:",
         "not_found": "काही सापडले नाही.",
         "select_quality": "गुणवत्ता निवडा:",
@@ -429,7 +429,7 @@ TEXTS = {
     "gu": {
         "choose_language": "તમારી ભાષા પસંદ કરો:",
         "language_set": "ભાષા ગુજરાતી સેટ કરવામાં આવી છે.",
-        "search_prompt": "હવે શોધવા માટે મૂવી અથવા ગીતનું નામ ટાઈપ કરો.",
+        "search_prompt": "🎬 તમે જાતે કોઈપણ મૂવી કે ગીત શોધી શકો છો — બસ નામ લખો.\n🤖 અથવા અમારા AI આસિસ્ટન્ટ સાથે વાત કરો, તે શોધી આપશે 😊",
         "results": "પરિણામો:",
         "not_found": "કંઈ મળ્યું નથી.",
         "select_quality": "ગુણવત્તા પસંદ કરો:",
@@ -1624,7 +1624,7 @@ def _gemini_call(system_text, contents):
     body = json.dumps({
         "systemInstruction": {"parts": [{"text": system_text}]},
         "contents": contents,
-        "generationConfig": {"temperature": 0.6, "maxOutputTokens": 700, "responseMimeType": "application/json"},
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 700, "responseMimeType": "application/json"},
     }).encode("utf-8")
     models = _discover_models() + [m for m in GEMINI_MODELS if m not in _model_cache["list"]]
     models = models[:5]
@@ -1661,11 +1661,16 @@ async def ai_answer(uid, user_text):
         "You can chat about ANYTHING (general questions, movies, songs, help), like a helpful chatbot. "
         "ALWAYS reply in the same language and script the user writes in (Bengali, Hindi, English, etc.). "
         "Keep replies short (1-4 sentences), warm and natural.\n"
-        "RULES FOR MOVIES/SONGS: The ONLY titles available in this bot are in AVAILABLE_TITLES below. "
-        "If the user asks for / searches a movie, series or song, pick matching titles ONLY from that list, copied EXACTLY, "
-        "and put them in \"titles\" (max 6). NEVER invent a title and NEVER give links. "
-        "If the thing they want is NOT in the list, say politely it is not available yet, the owner has been informed, "
+        "RULES FOR MOVIES/SONGS: AVAILABLE_TITLES below are written in ENGLISH (Latin letters), but users may type in ANY language or script "
+        "(Bengali, Hindi, Tamil, Telugu, Marathi, Gujarati, Urdu, Arabic, Hinglish, typos, etc.). "
+        "You MUST translate/transliterate the user's words to English in your head and match them to the English titles by SOUND and MEANING. "
+        "Examples: \"স্পাইডারম্যান\" or \"स्पाइडरमैन\" = Spider-Man; \"অ্যাভেঞ্জার্স\" = Avengers; \"পাঠান\" = Pathaan; \"आयरन मैन\" = Iron Man; \"pushpa\" = Pushpa. "
+        "A franchise name matches ALL its titles/parts/seasons in the list (e.g. Spider-Man -> every Spider-Man title). Ignore extra words like movie, film, দাও, খুঁজে দাও, चाहिए, Hindi, dubbed, 2023. "
+        "Put every matching title in \"titles\", copied EXACTLY as written in the list (max 8). NEVER invent a title and NEVER give links. "
+        "Before deciding something is missing, re-check the whole list carefully for a phonetic or partial match in English. "
+        "ONLY if there is truly no match: say politely (in the user's language) that it is not available yet and the owner has been informed, "
         "set \"wants_title\" true and leave \"titles\" empty. "
+        "When you do find matches, write the reply in the user's language and mention the movie name in the user's own script plus the English title once. "
         "If it is just general chat, set \"wants_title\" false and \"titles\" empty.\n"
         "Reply with JSON only: {\"reply\": string, \"titles\": [string], \"wants_title\": boolean}.\n"
         f"FOLDERS: {', '.join(_folder_names(category_tree)[:60])}\n"
@@ -1687,7 +1692,7 @@ async def ai_answer(uid, user_text):
     hist.append(("user", user_text[:1500]))
     hist.append(("model", reply))
     del hist[:-12]
-    return {"reply": reply, "titles": valid[:6], "wants_title": bool(data.get("wants_title")) and not valid}
+    return {"reply": reply, "titles": valid[:8], "wants_title": bool(data.get("wants_title")) and not valid}
 
 async def ai_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
