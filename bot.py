@@ -1600,14 +1600,23 @@ def _gemini_call(system_text, contents):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         req = _urlreq.Request(url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY})
         try:
-            with _urlreq.urlopen(req, timeout=25) as r:
+            with _urlreq.urlopen(req, timeout=12) as r:
                 data = json.loads(r.read().decode("utf-8"))
             txt = data["candidates"][0]["content"]["parts"][0]["text"]
             return json.loads(txt)
         except Exception as e:
             last_err = e
+            code = getattr(e, "code", None)
+            if code in (400, 401, 403, 429):   # চাবি/কোটার সমস্যা — অন্য মডেলে চেষ্টা করে লাভ নেই
+                try:
+                    detail = e.read().decode("utf-8")[:300]
+                except Exception:
+                    detail = ""
+                raise RuntimeError(f"HTTP {code} ({model}) {detail}")
+            if code is not None and code != 404:
+                raise RuntimeError(f"HTTP {code} ({model})")
             continue
-    raise last_err or RuntimeError("gemini failed")
+    raise RuntimeError(f"all models failed: {last_err}")
 
 async def ai_answer(uid, user_text):
     """Gemini-কে প্রশ্ন পাঠায়। ফেরত: {"reply": str, "titles": [...], "wants_title": bool} অথবা None।"""
@@ -1654,9 +1663,19 @@ async def ai_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if arg in ("on", "off"):
         bot_settings["ai_on"] = (arg == "on")
         save_state("settings", SETTINGS_FILE, bot_settings)
+    if arg == "test":
+        if not GEMINI_KEY:
+            await update.message.reply_text("GEMINI_API_KEY is MISSING in Render Environment.")
+            return
+        try:
+            res = await ai_answer(update.effective_user.id, "Say hello in one short sentence.")
+            await update.message.reply_text(f"AI test OK:\n{res['reply'] if res else 'empty reply'}")
+        except Exception as e:
+            await update.message.reply_text(f"AI test FAILED:\n{str(e)[:700]}")
+        return
     state = "ON" if ai_enabled() else "OFF"
     key = "set" if GEMINI_KEY else "MISSING (add GEMINI_API_KEY in Render)"
-    await update.message.reply_text(f"AI: {state}\nKey: {key}\n/ai on\n/ai off")
+    await update.message.reply_text(f"AI: {state}\nKey: {key}\n/ai on\n/ai off\n/ai test")
 
 async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_query: str):
     raw_query = raw_query.strip()
