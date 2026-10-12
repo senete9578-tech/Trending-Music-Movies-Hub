@@ -2794,7 +2794,104 @@ async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         except Exception:
             pass
+    elif await send_with_auto_poster(query.message, state["title"], state["path"], caption):
+        return
     await query.message.reply_text(caption)
+
+# ---------- অটো পোস্টার (TMDB থেকে) ----------
+TMDB_KEY = os.environ.get("TMDB_API_KEY", "").strip()
+AUTO_POSTERS_FILE = "auto_posters.json"
+auto_posters = load_state("auto_posters", AUTO_POSTERS_FILE, {})   # key -> file_id অথবা "none"
+
+_NOISE = re.compile(r"\b(hindi|dubbed|dual audio|english|tamil|telugu|bengali|bangla|marathi|gujarati|"
+                    r"720p|1080p|480p|2160p|4k|hd|full movie|movie|web series|series|season\s*\d+|part\s*\d+|"
+                    r"episode\s*\d+|s\d+e\d+|so\d+|eo\d+|vol\.?\s*\d+|final)\b", re.I)
+
+def _clean_for_tmdb(title):
+    year = None
+    m = re.search(r"\b(19|20)\d{2}\b", title)
+    if m:
+        year = m.group(0)
+    q = re.sub(r"\b(19|20)\d{2}\b", " ", title)
+    q = _NOISE.sub(" ", q)
+    q = re.sub(r"[\[\]()_\-]+", " ", q)
+    q = re.sub(r"\s+", " ", q).strip()
+    return q, year
+
+def _tmdb_poster_bytes(title):
+    """TMDB-তে নাম খুঁজে পোস্টারের ছবির bytes ফেরত দেয় (না পেলে None)।"""
+    import urllib.parse
+    q, year = _clean_for_tmdb(title)
+    if not q:
+        return None
+    headers = {"User-Agent": "Mozilla/5.0"}
+    params = {"query": q, "include_adult": "false", "language": "en-US"}
+    if TMDB_KEY.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {TMDB_KEY}"
+    else:
+        params["api_key"] = TMDB_KEY
+    url = "https://api.themoviedb.org/3/search/multi?" + urllib.parse.urlencode(params)
+    with _urlreq.urlopen(_urlreq.Request(url, headers=headers), timeout=10) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    results = [x for x in data.get("results", []) if x.get("media_type") in ("movie", "tv") and x.get("poster_path")]
+    if not results:
+        return None
+    best = results[0]
+    if year:
+        for x in results:
+            d = (x.get("release_date") or x.get("first_air_date") or "")[:4]
+            if d == year:
+                best = x
+                break
+    img_url = "https://image.tmdb.org/t/p/w780" + best["poster_path"]
+    with _urlreq.urlopen(_urlreq.Request(img_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=15) as r:
+        return r.read()
+
+async def send_with_auto_poster(message, title, path, caption):
+    """ম্যানুয়াল পোস্টার না থাকলে TMDB থেকে এনে (লোগোসহ) ক্যাপশনের সাথে পাঠায়। সফল হলে True।"""
+    if not TMDB_KEY or not bot_settings.get("auto_poster", True):
+        return False
+    key = poster_key(title, path)
+    cached = auto_posters.get(key)
+    if cached == "none":
+        return False
+    if cached:
+        try:
+            await message.reply_photo(photo=cached, caption=caption)
+            return True
+        except Exception:
+            pass
+    try:
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(None, _tmdb_poster_bytes, title)
+        if not raw:
+            auto_posters[key] = "none"
+            save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
+            return False
+        marked = await loop.run_in_executor(None, apply_watermark, raw)
+        msg = await message.reply_photo(photo=marked, caption=caption)
+        auto_posters[key] = msg.photo[-1].file_id
+        save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
+        return True
+    except Exception as e:
+        logging.warning("auto poster failed: %s", e)
+        return False
+
+async def autoposter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split()
+    arg = parts[1].lower() if len(parts) > 1 else ""
+    if arg in ("on", "off"):
+        bot_settings["auto_poster"] = (arg == "on")
+        save_state("settings", SETTINGS_FILE, bot_settings)
+    if arg == "reset":
+        auto_posters.clear()
+        save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
+    key = "set" if TMDB_KEY else "MISSING (add TMDB_API_KEY in Render)"
+    await update.message.reply_text(
+        f"Auto poster: {'ON' if bot_settings.get('auto_poster', True) else 'OFF'}\nKey: {key}\nSaved: {len(auto_posters)}\n"
+        "/autoposter on | off | reset")
 
 # ---------- কোয়ালিটি সিলেক্ট করলে ডাউনলোড লিংক পাঠানো (সাধারণ মুভি/গান) ----------
 async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2917,6 +3014,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("clearcategories", clear_categories))
     application.add_handler(CommandHandler("treestyle", tree_style_command))
     application.add_handler(CommandHandler("ai", ai_toggle_command))
+    application.add_handler(CommandHandler("autoposter", autoposter_command))
     application.add_handler(CommandHandler("categoryafter", category_after))
     application.add_handler(CommandHandler("wrapcategory", wrap_category))
     application.add_handler(CommandHandler("buildcategories", build_categories))
