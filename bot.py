@@ -200,7 +200,7 @@ TEXTS = {
     "en": {
         "choose_language": "Select your language:",
         "language_set": "Language set to English.",
-        "search_prompt": "🎬 Search any movie or song yourself — just type its name.\n🤖 Or chat with our AI assistant, it'll find it for you 😊",
+        "search_prompt": "🎬 Search any movie or song yourself — just type its name.\n🤖 Or chat with our Music & Movies AI Hub — it'll find it for you 😊",
         "results": "Results:",
         "not_found": "Not found.",
         "not_found_request": "😕 Sorry, this isn't available yet.\n🙏 Don't worry — it will be uploaded in a few days, and we'll notify you here as soon as it's ready! 🎬",
@@ -245,7 +245,7 @@ TEXTS = {
     "hi": {
         "choose_language": "अपनी भाषा चुनें:",
         "language_set": "भाषा हिंदी में सेट कर दी गई है।",
-        "search_prompt": "🎬 आप खुद कोई भी मूवी या गाना सर्च कर सकते हैं — बस उसका नाम लिखें।\n🤖 या हमारे AI असिस्टेंट से बात करें, वो आपके लिए ढूंढ देगा 😊",
+        "search_prompt": "🎬 आप खुद कोई भी मूवी या गाना सर्च कर सकते हैं — बस उसका नाम लिखें।\n🤖 या हमारे Music & Movies AI Hub से बात करें, वो आपके लिए ढूंढ देगा 😊",
         "results": "परिणाम:",
         "not_found": "कुछ नहीं मिला।",
         "not_found_request": "😕 माफ़ कीजिए, यह अभी उपलब्ध नहीं है।\n🙏 चिंता न करें — कुछ ही दिनों में इसे अपलोड कर दिया जाएगा और तैयार होते ही हम आपको यहीं बता देंगे! 🎬",
@@ -290,7 +290,7 @@ TEXTS = {
     "bn": {
         "choose_language": "আপনার ভাষা নির্বাচন করুন:",
         "language_set": "ভাষা বাংলায় সেট করা হয়েছে।",
-        "search_prompt": "🎬 আপনি নিজেই যেকোনো মুভি বা গান সার্চ করতে পারেন — শুধু নামটা লিখুন।\n🤖 অথবা আমাদের AI সহকারীর সাথে গল্প করুন, সে খুঁজে দেবে 😊",
+        "search_prompt": "🎬 আপনি নিজেই যেকোনো মুভি বা গান সার্চ করতে পারেন — শুধু নামটা লিখুন।\n🤖 অথবা আমাদের Music & Movies AI Hub-এর সাথে গল্প করুন, সে খুঁজে দেবে 😊",
         "results": "রেজাল্ট:",
         "not_found": "কিছু পাওয়া যায়নি।",
         "not_found_request": "😕 দুঃখিত, এটি এখনো আমাদের কাছে নেই।\n🙏 চিন্তা করবেন না — কয়েক দিনের মধ্যেই এটি আপলোড করে দেওয়া হবে, আর তৈরি হলেই এখানে আপনাকে জানিয়ে দেব! 🎬",
@@ -335,7 +335,7 @@ TEXTS = {
     "ta": {
         "choose_language": "உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
         "language_set": "மொழி தமிழாக அமைக்கப்பட்டது.",
-        "search_prompt": "🎬 நீங்களே எந்த திரைப்படம் அல்லது பாடலையும் தேடலாம் — பெயரை தட்டச்சு செய்யுங்கள்.\n🤖 அல்லது எங்கள் AI உதவியாளரிடம் பேசுங்கள், அவர் தேடித் தருவார் 😊",
+        "search_prompt": "🎬 நீங்களே எந்த திரைப்படம் அல்லது பாடலையும் தேடலாம் — பெயரை தட்டச்சு செய்யுங்கள்.\n🤖 அல்லது எங்கள் Music & Movies AI Hub-இடம் பேசுங்கள், அவர் தேடித் தருவார் 😊",
         "results": "முடிவுகள்:",
         "not_found": "எதுவும் கிடைக்கவில்லை.",
         "not_found_request": "😕 மன்னிக்கவும், இது இன்னும் கிடைக்கவில்லை.\n🙏 கவலை வேண்டாம் — சில நாட்களில் பதிவேற்றப்படும், தயாரானதும் இங்கேயே உங்களுக்குத் தெரிவிப்போம்! 🎬",
@@ -380,7 +380,7 @@ TEXTS = {
     "te": {
         "choose_language": "మీ భాషను ఎంచుకోండి:",
         "language_set": "భాష తెలుగుగా సెట్ చేయబడింది.",
-        "search_prompt": "🎬 మీరే ఏ సినిమా లేదా పాటనైనా సెర్చ్ చేయవచ్చు — పేరు టైప్ చేయండి.\n🤖 లేదా మా AI అసిస్టెంట్‌తో మాట్లాడండి, అది వెతికి ఇస్తుంది 😊",
+        "search_prompt": "🎬 మీరే ఏ సినిమా లేదా పాటనైనా సెర్చ్ చేయవచ్చు — పేరు టైప్ చేయండి.\n🤖 లేదా మా Music & Movies AI Hub తో మాట్లాడండి, అది వెతికి ఇస్తుంది 😊",
         "results": "ఫలితాలు:",
         "not_found": "ఏమీ కనుగొనబడలేదు.",
         "not_found_request": "😕 క్షమించండి, ఇది ఇంకా అందుబాటులో లేదు.\n🙏 ఆందోళన వద్దు — కొన్ని రోజుల్లో అప్‌లోడ్ చేస్తాం, సిద్ధమైన వెంటనే ఇక్కడే మీకు తెలియజేస్తాం! 🎬",
@@ -425,7 +425,7 @@ TEXTS = {
     "mr": {
         "choose_language": "तुमची भाषा निवडा:",
         "language_set": "भाषा मराठी सेट केली आहे.",
-        "search_prompt": "🎬 तुम्ही स्वतः कोणताही चित्रपट किंवा गाणे शोधू शकता — फक्त नाव टाइप करा.\n🤖 किंवा आमच्या AI असिस्टंटशी गप्पा मारा, तो शोधून देईल 😊",
+        "search_prompt": "🎬 तुम्ही स्वतः कोणताही चित्रपट किंवा गाणे शोधू शकता — फक्त नाव टाइप करा.\n🤖 किंवा आमच्या Music & Movies AI Hub शी गप्पा मारा, तो शोधून देईल 😊",
         "results": "निकाल:",
         "not_found": "काही सापडले नाही.",
         "not_found_request": "😕 क्षमस्व, हे अजून उपलब्ध नाही.\n🙏 काळजी नको — काही दिवसांत अपलोड केले जाईल आणि तयार होताच इथेच तुम्हाला कळवू! 🎬",
@@ -470,7 +470,7 @@ TEXTS = {
     "gu": {
         "choose_language": "તમારી ભાષા પસંદ કરો:",
         "language_set": "ભાષા ગુજરાતી સેટ કરવામાં આવી છે.",
-        "search_prompt": "🎬 તમે જાતે કોઈપણ મૂવી કે ગીત શોધી શકો છો — બસ નામ લખો.\n🤖 અથવા અમારા AI આસિસ્ટન્ટ સાથે વાત કરો, તે શોધી આપશે 😊",
+        "search_prompt": "🎬 તમે જાતે કોઈપણ મૂવી કે ગીત શોધી શકો છો — બસ નામ લખો.\n🤖 અથવા અમારા Music & Movies AI Hub સાથે વાત કરો, તે શોધી આપશે 😊",
         "results": "પરિણામો:",
         "not_found": "કંઈ મળ્યું નથી.",
         "not_found_request": "😕 માફ કરશો, આ હજુ ઉપલબ્ધ નથી.\n🙏 ચિંતા ન કરો — થોડા દિવસોમાં અપલોડ થઈ જશે અને તૈયાર થતાં જ અહીં જ તમને જણાવીશું! 🎬",
@@ -639,9 +639,12 @@ def build_results_keyboard(titles, page: int = 0):
 # ---------- /start ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user.id, update.effective_user)
-    buttons = [[InlineKeyboardButton("Follow & Start", callback_data="begin")]]
+    buttons = [
+        [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
+        for code, name in LANGUAGES.items()
+    ]
     await update.message.reply_text(
-        "Welcome!",
+        "🌐 Select your language:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
@@ -1760,12 +1763,12 @@ def _discover_models():
         pass
     return GEMINI_MODELS
 
-def _gemini_call(system_text, contents):
+def _gemini_call(system_text, contents, max_tokens=700):
     import time as _time
     body = json.dumps({
         "systemInstruction": {"parts": [{"text": system_text}]},
         "contents": contents,
-        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 700, "responseMimeType": "application/json"},
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": max_tokens, "responseMimeType": "application/json"},
     }).encode("utf-8")
     models = _discover_models() + [m for m in GEMINI_MODELS if m not in _model_cache["list"]]
     models = models[:5]
@@ -1797,7 +1800,7 @@ async def ai_answer(uid, user_text):
     """Gemini-কে প্রশ্ন পাঠায়। ফেরত: {"reply": str, "titles": [...], "wants_title": bool} অথবা None।"""
     titles = list(db.keys())[:900]
     system_text = (
-        "You are the friendly assistant of a Telegram bot called MovieSongSearch_bot. "
+        "You are \"Music & Movies AI Hub\", the friendly assistant of a Telegram bot called MovieSongSearch_bot. If asked your name or who made you, say you are Music & Movies AI Hub; never mention Gemini, Google or any AI company. "
         "The bot owner shares movies, web series and songs as download links. "
         "You can chat about ANYTHING (general questions, movies, songs, help), like a helpful chatbot. "
         "ALWAYS reply in the same language and script the user writes in (Bengali, Hindi, English, etc.). "
@@ -3149,6 +3152,58 @@ def _tree_add(cat, title, nested_path):
     node["_titles"].append({"title": title, "path": nested_path, "display": display})
     return True
 
+def _category_paths(node=None, trail=None, out=None):
+    node = category_tree if node is None else node
+    trail = trail or []
+    out = [] if out is None else out
+    for k, v in node.items():
+        if k == "_titles" or not isinstance(v, dict):
+            continue
+        out.append(trail + [k])
+        _category_paths(v, trail + [k], out)
+    return out
+
+def _existing_cat_of(title):
+    found = []
+    def walk(node, trail):
+        for k, v in node.items():
+            if k == "_titles":
+                if any(isinstance(e, dict) and e.get("title") == title for e in v):
+                    found.append(trail)
+            elif isinstance(v, dict):
+                walk(v, trail + [k])
+    walk(category_tree, [])
+    return found[0] if found else None
+
+async def _ai_classify(titles):
+    """নতুন টাইটেলগুলোর জন্য: (১) আগের একই টাইটেল থাকলে সেই নাম, (২) সঠিক ক্যাটাগরি ফোল্ডার — Gemini বেছে দেয়।"""
+    existing = list(db.keys())[:900]
+    paths = [" / ".join(pp) for pp in _category_paths()][:200]
+    system_text = (
+        "You organize movies/series for a Telegram bot. For EACH new title return: "
+        "(1) \"canonical\": if it is the same movie/series as one in EXISTING_TITLES (ignore words like Marvels, The, punctuation, year formatting) "
+        "return that existing title EXACTLY as written; otherwise return the new title unchanged. "
+        "(2) \"category\": a list of folder names. Prefer an EXACT existing path from CATEGORY_PATHS split into a list "
+        "(e.g. a Marvel movie -> [\"Hollywood\",\"Marvel\", ...] using the closest existing path). If nothing fits, create a sensible new path "
+        "reusing existing top-level names (Hollywood, Bollywood, South Movies, Web Series, Songs...). Web series go under Web Series. Max 4 levels. "
+        "Reply JSON only: {\"items\":[{\"title\":string,\"canonical\":string,\"category\":[string]}]}.\n"
+        f"CATEGORY_PATHS: {' | '.join(paths)}\n"
+        f"EXISTING_TITLES: {' || '.join(existing)}"
+    )
+    contents = [{"role": "user", "parts": [{"text": "NEW TITLES:\n" + "\n".join(titles)}]}]
+    data = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(
+        None, _gemini_call, system_text, contents, 6000), timeout=75)
+    out = {}
+    low = {k.lower(): k for k in db}
+    for it in data.get("items", []) or []:
+        t0 = str(it.get("title", "")).strip()
+        can = str(it.get("canonical", "")).strip() or t0
+        can = low.get(can.lower(), can)
+        cat = [str(x).strip() for x in (it.get("category") or []) if str(x).strip()][:4]
+        if t0:
+            out[t0] = (can, cat or None)
+    return out
+
 async def drivemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/drivemap MCU/MAIN UNIVERS | Hollywood | Marvel | Main Universe  — Drive ফোল্ডার -> বটের ক্যাটাগরি"""
     if update.effective_user.id != ADMIN_ID:
@@ -3229,6 +3284,29 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not plan:
         await msg.reply_text(f"নতুন কিছু নেই। (আগে থেকেই আছে: {skipped_old})")
         return
+    ai_used = False
+    todo = sorted({it["title"] for it in plan if not it["cat"]})
+    if todo and ai_enabled():
+        try:
+            await msg.reply_text("🤖 এআই ক্যাটাগরি ও নাম ঠিক করছে...")
+            res = await _ai_classify(todo)
+            seen2, newplan = set(), []
+            for it in plan:
+                if not it["cat"] and it["title"] in res:
+                    can, cat = res[it["title"]]
+                    it["title"] = can
+                    it["cat"] = _existing_cat_of(can) or cat
+                    it["ai"] = True
+                    ai_used = True
+                k2 = (it["title"].lower(), it["season"], it["episode"], it["quality"])
+                if k2 in seen2:
+                    dup += 1
+                    continue
+                seen2.add(k2)
+                newplan.append(it)
+            plan = newplan
+        except Exception as e:
+            await msg.reply_text(f"⚠️ এআই ব্যর্থ ({str(e)[:80]}), ক্যাটাগরি ছাড়াই দেখাচ্ছি।")
     context.bot_data["drive_plan"] = plan
     groups = {}
     for it in plan:
@@ -3242,7 +3320,7 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
             detail = ", ".join(f"S{k.split()[-1]}:{v}ep" for k, v in sc.items()) + f" {its[0]['quality']}"
         else:
             detail = ", ".join(sorted({i["quality"] for i in its}))
-        lines.append(f"• {title} ({detail}) → {' / '.join(cat) if cat else '⚠️ ক্যাটাগরি নেই'}")
+        lines.append(f"• {title} ({detail}) → {' / '.join(cat) if cat else '⚠️ ক্যাটাগরি নেই'}{' 🤖' if its[0].get('ai') else ''}")
     header = (f"📋 প্রিভিউ\n🆕 নতুন ফাইল: {len(plan)} | ⏭ আগে থেকেই আছে: {skipped_old} | 🔁 ডুপ্লিকেট: {dup}\n"
               f"🎬 টাইটেল: {len(groups)}\n\n")
     chunks, cur = [], header
@@ -3310,6 +3388,138 @@ async def drive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+# ---------- সার্ভিস মনিটর: কোনো সার্ভিস বন্ধ হলে অ্যাডমিনকে মেসেজ ----------
+_svc_state = {}
+_bg_tasks = []
+
+def _http_ok(url, headers=None, timeout=12):
+    req = _urlreq.Request(url, headers=headers or {})
+    with _urlreq.urlopen(req, timeout=timeout) as r:
+        return r.status < 400
+
+def _chk_gemini():
+    if not GEMINI_KEY:
+        return None
+    return _http_ok("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", {"x-goog-api-key": GEMINI_KEY})
+
+def _chk_tmdb():
+    if not TMDB_KEY:
+        return None
+    return _http_ok(f"https://api.themoviedb.org/3/configuration?api_key={TMDB_KEY}")
+
+def _chk_tmdb_img():
+    if not TMDB_KEY:
+        return None
+    try:
+        return _http_ok("https://image.tmdb.org/t/p/w92/")
+    except _urlerr.HTTPError as e:
+        return e.code < 500   # ৪০৪ মানে সার্ভার আছে
+
+def _chk_mongo():
+    if not mongo_client:
+        return None
+    mongo_client.admin.command("ping")
+    return True
+
+def _chk_drive():
+    if not DRIVE_KEY:
+        return None
+    return _http_ok("https://www.googleapis.com/discovery/v1/apis/drive/v3/rest")
+
+_SERVICES = {
+    "🤖 Gemini এআই": _chk_gemini,
+    "🖼 পোস্টার সার্ভার (TMDB)": _chk_tmdb,
+    "🖼 পোস্টার ছবির সার্ভার": _chk_tmdb_img,
+    "🗄 ডাটাবেস (MongoDB)": _chk_mongo,
+    "📁 Google Drive": _chk_drive,
+}
+
+def _probe(fn):
+    try:
+        r = fn()
+        if r is None:
+            return "skip"
+        return None if r else "সাড়া নেই"
+    except _urlerr.HTTPError as e:
+        return {429: "কোটা শেষ (HTTP 429)", 401: "চাবি ভুল (HTTP 401)", 403: "চাবি/অনুমতি সমস্যা (HTTP 403)"}.get(e.code, f"HTTP {e.code}")
+    except Exception as e:
+        return type(e).__name__
+
+async def health_monitor(bot):
+    await asyncio.sleep(90)
+    while True:
+        for name, fn in _SERVICES.items():
+            try:
+                reason = await asyncio.to_thread(_probe, fn)
+            except Exception as e:
+                reason = type(e).__name__
+            if reason == "skip":
+                continue
+            st = _svc_state.setdefault(name, {"ok": True, "fails": 0})
+            if reason:
+                st["fails"] += 1
+                if st["fails"] >= 2 and st["ok"]:
+                    st["ok"] = False
+                    try:
+                        await bot.send_message(ADMIN_ID, f"🚨 {name} বন্ধ বা সমস্যায় আছে!\n⚠️ কারণ: {reason}")
+                    except Exception:
+                        pass
+            else:
+                st["fails"] = 0
+                if not st["ok"]:
+                    st["ok"] = True
+                    try:
+                        await bot.send_message(ADMIN_ID, f"✅ {name} আবার ঠিক হয়ে গেছে।")
+                    except Exception:
+                        pass
+        await asyncio.sleep(300)
+
+# ---------- একসাথে অনেক কমান্ড (প্রতি লাইনে একটা) ----------
+async def bulk_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg or not msg.text or not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    if not msg.text.lstrip().startswith("/"):
+        return
+    cmd_lines = [l.strip() for l in msg.text.split("\n") if l.strip().startswith("/")]
+    if len(cmd_lines) < 2:
+        return
+    table = {}
+    for grp in context.application.handlers.values():
+        for h in grp:
+            if isinstance(h, CommandHandler):
+                for c in h.commands:
+                    table.setdefault(c, h.callback)
+    ok = bad = 0
+    for ln in cmd_lines:
+        m = re.match(r"/(\w+)(?:@\w+)?(.*)$", ln, re.S)
+        cb = table.get(m.group(1).lower()) if m else None
+        if not cb:
+            bad += 1
+            await msg.reply_text(f"❓ অচেনা কমান্ড: {ln[:40]}")
+            continue
+        d = update.to_dict()
+        d["message"]["text"] = f"/{m.group(1)}{m.group(2)}"
+        d["message"].pop("entities", None)
+        new_update = Update.de_json(d, context.bot)
+        context.args = m.group(2).split()
+        try:
+            await cb(new_update, context)
+            ok += 1
+        except ApplicationHandlerStop:
+            ok += 1
+        except Exception as e:
+            bad += 1
+            await msg.reply_text(f"⚠️ {ln[:40]}: {str(e)[:100]}")
+        await asyncio.sleep(0.4)
+    await msg.reply_text(f"📦 {ok}টা কমান্ড চালানো হয়েছে" + (f" | ❌ {bad}টা হয়নি" if bad else ""))
+    chat = update.effective_chat
+    if chat:
+        task = typing_tasks.pop(chat.id, None)
+        if task:
+            task.cancel()
+    raise ApplicationHandlerStop
+
 async def run_webhook_server(application: Application, base_url: str, port: int):
     await application.bot.set_webhook(url=f"{base_url}/{BOT_TOKEN}")
 
@@ -3338,6 +3548,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
 
 # ---------- মেইন ----------
 async def post_init(application: Application):
+    _bg_tasks.append(asyncio.create_task(health_monitor(application.bot)))
     await application.bot.set_my_commands([
         BotCommand("search", "search for movies or songs"),
         BotCommand("help", "get help"),
@@ -3388,6 +3599,7 @@ def build_application() -> Application:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, capture_pending_text), group=-2)
     application.add_handler(TypeHandler(Update, stop_typing), group=5)
     application.add_handler(TypeHandler(Update, touch_all), group=-2)
+    application.add_handler(TypeHandler(Update, bulk_commands), group=-1)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_content))
     application.add_handler(CommandHandler("addseries", add_series_content))
