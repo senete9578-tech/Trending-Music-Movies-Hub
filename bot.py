@@ -3436,6 +3436,19 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await msg.reply_text(f"❌ ত্রুটি: {e}")
         return
+    # একই সিরিজের কিছু ফাইলে Hindi লেখা, কিছুতে নেই: সব এক টাইটেলে মেলানো
+    hindi_bases = {it["title"][:-6].lower() for it in plan if it["series"] and it["title"].endswith(" Hindi")}
+    merged, seen3 = [], set()
+    for it in plan:
+        if it["series"] and not it["title"].endswith(" Hindi") and it["title"].lower() in hindi_bases:
+            it["title"] += " Hindi"
+        k3 = (it["title"].lower(), it["season"], it["episode"], it["quality"])
+        if k3 in seen3:
+            dup += 1
+            continue
+        seen3.add(k3)
+        merged.append(it)
+    plan = merged
     if not plan:
         await msg.reply_text(f"নতুন কিছু নেই। (আগে থেকেই আছে: {skipped_old})")
         return
