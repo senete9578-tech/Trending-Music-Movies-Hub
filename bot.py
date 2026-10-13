@@ -594,7 +594,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-13-sync4"
+BOT_VERSION = "2026-10-13-sync5"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3298,8 +3298,10 @@ def _existing_drive_ids():
     walk(db)
     return ids
 
-def _norm_title(x):
-    x = re.sub(r"\b(19|20)\d{2}\b", " ", x.lower())
+def _norm_title(x, strip_year=False):
+    x = x.lower()
+    if strip_year:
+        x = re.sub(r"\b(19|20)\d{2}\b", " ", x)
     x = re.sub(r"\b(hindi|dubbed|dual audio|full movie|the)\b", " ", x)
     return re.sub(r"[^a-z0-9\u0980-\u09ff]+", "", x)
 
@@ -3445,7 +3447,7 @@ async def drivelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     existing = _existing_drive_ids()
     exist_map = {}
     for k in db:
-        exist_map.setdefault(_norm_title(k), k)
+        exist_map.setdefault(_norm_title(k, isinstance(db[k], dict) and not is_leaf_level(db[k])), k)
     lines = []
     try:
         for rid in ids:
@@ -3454,7 +3456,7 @@ async def drivelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 info = parse_drive_name(name)
                 se = f"{info['season']} {info['episode']}" if info["series"] else "-"
                 inbot = "IN-BOT" if fid in existing else "NEW"
-                sim = exist_map.get(_norm_title(info["title"]), "")
+                sim = exist_map.get(_norm_title(info["title"], info["series"]), "")
                 lines.append(f"{'/'.join(path)} | {name} | {fid} | {info['title']} | {se} | {info['quality']} | {inbot}" + (f" | SAME-TITLE-AS: {sim}" if sim else ""))
     except Exception as e:
         await update.message.reply_text(f"❌ ত্রুটি: {str(e)[:200]}")
@@ -3542,9 +3544,9 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # আগের টাইটেলের সাথে নাম মিললে (সাল/Hindi/চিহ্ন বাদ দিয়ে) সেই টাইটেলেই বসানো
     exist_map = {}
     for k in db:
-        exist_map.setdefault(_norm_title(k), k)
+        exist_map.setdefault(_norm_title(k, isinstance(db[k], dict) and not is_leaf_level(db[k])), k)
     for it in plan:
-        ek = exist_map.get(_norm_title(it["title"]))
+        ek = exist_map.get(_norm_title(it["title"], bool(it.get("series"))))
         if ek and ek != it["title"]:
             it["title"] = ek
     # একই সিরিজের কিছু ফাইলে Hindi লেখা, কিছুতে নেই: সব এক টাইটেলে মেলানো
