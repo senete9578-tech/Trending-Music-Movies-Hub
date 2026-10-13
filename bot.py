@@ -594,7 +594,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-13-sort3"
+BOT_VERSION = "2026-10-13-sync4"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3298,6 +3298,11 @@ def _existing_drive_ids():
     walk(db)
     return ids
 
+def _norm_title(x):
+    x = re.sub(r"\b(19|20)\d{2}\b", " ", x.lower())
+    x = re.sub(r"\b(hindi|dubbed|dual audio|full movie|the)\b", " ", x)
+    return re.sub(r"[^a-z0-9\u0980-\u09ff]+", "", x)
+
 def _drive_category_for(path):
     if not bot_settings.get("drive_auto_category"):
         return None
@@ -3392,6 +3397,71 @@ async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(f"🤖 বট ভার্সন: {BOT_VERSION}")
 
+def _shape(node):
+    if not isinstance(node, dict) or not node:
+        return ""
+    if is_leaf_level(node):
+        return ",".join(ordered_keys(node))
+    return "; ".join(f"{k}:{len(v) if isinstance(v, dict) else ''}" for k, v in ((k, node[k]) for k in ordered_keys(node)))
+
+def _title_cats():
+    out = {}
+    def walk(node, trail):
+        for k, v in node.items():
+            if k == "_titles":
+                for e in v:
+                    if isinstance(e, dict):
+                        out.setdefault(e.get("title"), []).append("/".join(trail) + (f" ({' / '.join(e.get('path', []))})" if e.get("path") else ""))
+            elif isinstance(v, dict):
+                walk(v, trail + [k])
+    walk(category_tree, [])
+    return out
+
+async def exportdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """বটের সব টাইটেল + কোন ফোল্ডারে আছে, একটা ফাইলে পাঠায়।"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    cats = _title_cats()
+    lines = [f"TITLES: {len(db)}", ""]
+    for title in db:
+        c = cats.get(title)
+        lines.append(f"{title} | {_shape(db[title])} | " + (" ; ".join(c) if c else "NO-CATEGORY"))
+    lines += ["", "FOLDERS:"] + ["/".join(pp) for pp in _category_paths()]
+    await update.message.reply_document(document=io.BytesIO("\n".join(lines).encode("utf-8")), filename="bot_content.txt",
+                                        caption=f"🗂 {len(db)} টাইটেল")
+
+async def drivelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/drivelist <ফোল্ডার লিংক> — Drive-এর সব ভিডিওর তালিকা (কিছু যোগ করে না)।"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not DRIVE_KEY:
+        await update.message.reply_text("❌ DRIVE_API_KEY নেই।")
+        return
+    ids = [x for x in (_folder_id_from(a) for a in (update.message.text or "").split()[1:]) if x]
+    if not ids:
+        await update.message.reply_text("ফরম্যাট: /drivelist https://drive.google.com/drive/folders/XXXX")
+        return
+    await update.message.reply_text("⏳ স্ক্যান হচ্ছে...")
+    existing = _existing_drive_ids()
+    exist_map = {}
+    for k in db:
+        exist_map.setdefault(_norm_title(k), k)
+    lines = []
+    try:
+        for rid in ids:
+            root_name, files = await asyncio.to_thread(_drive_scan, rid)
+            for path, name, fid in sorted(files, key=lambda x: ("/".join(x[0]).lower(), natural_sort_key(x[1]))):
+                info = parse_drive_name(name)
+                se = f"{info['season']} {info['episode']}" if info["series"] else "-"
+                inbot = "IN-BOT" if fid in existing else "NEW"
+                sim = exist_map.get(_norm_title(info["title"]), "")
+                lines.append(f"{'/'.join(path)} | {name} | {fid} | {info['title']} | {se} | {info['quality']} | {inbot}" + (f" | SAME-TITLE-AS: {sim}" if sim else ""))
+    except Exception as e:
+        await update.message.reply_text(f"❌ ত্রুটি: {str(e)[:200]}")
+        return
+    await update.message.reply_document(document=io.BytesIO("\n".join(lines).encode("utf-8")), filename="drive_list.txt",
+                                        caption=f"📁 {len(lines)} ফাইল")
+
 async def drivemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/drivemap MCU/MAIN UNIVERS | Hollywood | Marvel | Main Universe  — Drive ফোল্ডার -> বটের ক্যাটাগরি"""
     if update.effective_user.id != ADMIN_ID:
@@ -3469,6 +3539,14 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await msg.reply_text(f"❌ ত্রুটি: {e}")
         return
+    # আগের টাইটেলের সাথে নাম মিললে (সাল/Hindi/চিহ্ন বাদ দিয়ে) সেই টাইটেলেই বসানো
+    exist_map = {}
+    for k in db:
+        exist_map.setdefault(_norm_title(k), k)
+    for it in plan:
+        ek = exist_map.get(_norm_title(it["title"]))
+        if ek and ek != it["title"]:
+            it["title"] = ek
     # একই সিরিজের কিছু ফাইলে Hindi লেখা, কিছুতে নেই: সব এক টাইটেলে মেলানো
     hindi_bases = {it["title"][:-6].lower() for it in plan if it["series"] and it["title"].endswith(" Hindi")}
     merged, seen3 = [], set()
@@ -3561,10 +3639,16 @@ async def drive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if node and is_leaf_level(node):
                 skipped += 1
                 continue
+            if it["quality"] in node.get(it["episode"], {}):
+                skipped += 1
+                continue
             node.setdefault(it["episode"], {})[it["quality"]] = it["link"]
             nested = [it["season"]]
         else:
             if cur and not is_leaf_level(cur):
+                skipped += 1
+                continue
+            if it["quality"] in (cur or {}):
                 skipped += 1
                 continue
             db.setdefault(title, {})[it["quality"]] = it["link"]
@@ -3686,6 +3770,53 @@ async def health_monitor(bot):
         await asyncio.sleep(300)
 
 # ---------- একসাথে অনেক কমান্ড (প্রতি লাইনে একটা) ----------
+def _command_table(context):
+    table = {}
+    for grp in context.application.handlers.values():
+        for h in grp:
+            if isinstance(h, CommandHandler):
+                for c in h.commands:
+                    table.setdefault(c, h.callback)
+    return table
+
+async def _run_lines(update, context, cmd_lines, quiet=False, pause=0.4):
+    """প্রতি লাইনের কমান্ড এক এক করে চালায়। ফেরত: [(লাইন, উত্তর বা ত্রুটি)]"""
+    import telegram as _tg
+    table = _command_table(context)
+    results = []
+    captured = []
+    orig_reply = _tg.Message.reply_text
+    if quiet:
+        async def _fake_reply(self, text=None, *a, **k):
+            captured.append(str(text))
+            return None
+        _tg.Message.reply_text = _fake_reply
+    try:
+        for ln in cmd_lines:
+            m = re.match(r"/(\w+)(?:@\w+)?(.*)$", ln, re.S)
+            cb = table.get(m.group(1).lower()) if m else None
+            if not cb:
+                results.append((ln, "❓ অচেনা কমান্ড"))
+                continue
+            d = update.to_dict()
+            d["message"]["text"] = f"/{m.group(1)}{m.group(2)}"
+            for k in ("entities", "document", "caption", "caption_entities"):
+                d["message"].pop(k, None)
+            new_update = Update.de_json(d, context.bot)
+            context.args = m.group(2).split()
+            del captured[:]
+            try:
+                await cb(new_update, context)
+                results.append((ln, (captured[0].split("\n")[0] if captured else "ok")))
+            except ApplicationHandlerStop:
+                results.append((ln, "ok"))
+            except Exception as e:
+                results.append((ln, f"⚠️ ত্রুটি: {str(e)[:100]}"))
+            await asyncio.sleep(pause if not quiet else 0.05)
+    finally:
+        _tg.Message.reply_text = orig_reply
+    return results
+
 async def bulk_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text or not update.effective_user or update.effective_user.id != ADMIN_ID:
@@ -3695,41 +3826,36 @@ async def bulk_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cmd_lines = [l.strip() for l in msg.text.split("\n") if l.strip().startswith("/")]
     if len(cmd_lines) < 2:
         return
-    table = {}
-    for grp in context.application.handlers.values():
-        for h in grp:
-            if isinstance(h, CommandHandler):
-                for c in h.commands:
-                    table.setdefault(c, h.callback)
-    ok = bad = 0
-    for ln in cmd_lines:
-        m = re.match(r"/(\w+)(?:@\w+)?(.*)$", ln, re.S)
-        cb = table.get(m.group(1).lower()) if m else None
-        if not cb:
-            bad += 1
-            await msg.reply_text(f"❓ অচেনা কমান্ড: {ln[:40]}")
-            continue
-        d = update.to_dict()
-        d["message"]["text"] = f"/{m.group(1)}{m.group(2)}"
-        d["message"].pop("entities", None)
-        new_update = Update.de_json(d, context.bot)
-        context.args = m.group(2).split()
-        try:
-            await cb(new_update, context)
-            ok += 1
-        except ApplicationHandlerStop:
-            ok += 1
-        except Exception as e:
-            bad += 1
-            await msg.reply_text(f"⚠️ {ln[:40]}: {str(e)[:100]}")
-        await asyncio.sleep(0.4)
-    await msg.reply_text(f"📦 {ok}টা কমান্ড চালানো হয়েছে" + (f" | ❌ {bad}টা হয়নি" if bad else ""))
+    res = await _run_lines(update, context, cmd_lines)
+    bad = sum(1 for _, r in res if r.startswith(("❓", "⚠️")))
+    await msg.reply_text(f"📦 {len(res) - bad}টা কমান্ড চালানো হয়েছে" + (f" | ❌ {bad}টা হয়নি" if bad else ""))
     chat = update.effective_chat
     if chat:
         task = typing_tasks.pop(chat.id, None)
         if task:
             task.cancel()
     raise ApplicationHandlerStop
+
+async def run_commands_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """অ্যাডমিন .txt ফাইল পাঠালে তার প্রতি লাইনের কমান্ড চলে, শেষে রিপোর্ট ফাইল ফেরত আসে।"""
+    msg = update.message
+    if not msg or not msg.document or update.effective_user.id != ADMIN_ID:
+        return
+    name = (msg.document.file_name or "").lower()
+    if not name.endswith(".txt"):
+        return
+    f = await msg.document.get_file()
+    raw = bytes(await f.download_as_bytearray()).decode("utf-8", "ignore")
+    cmd_lines = [l.strip() for l in raw.splitlines() if l.strip().startswith("/")][:1500]
+    if not cmd_lines:
+        await msg.reply_text("ফাইলে / দিয়ে শুরু কোনো কমান্ড নেই।")
+        return
+    await msg.reply_text(f"⏳ {len(cmd_lines)}টা কমান্ড চলছে...")
+    res = await _run_lines(update, context, cmd_lines, quiet=True)
+    bad = [(l, r) for l, r in res if r.startswith(("❓", "⚠️")) or any(w in r for w in ("Not found", "পাওয়া যায়নি", "Format", "format", "नहीं मिला", "Need at least"))]
+    report = "\n".join(f"{'FAIL' if (l, r) in bad else 'OK  '} | {l[:120]} | {r}" for l, r in res)
+    await msg.reply_document(document=io.BytesIO(report.encode("utf-8")), filename="report.txt",
+                             caption=f"✅ চলেছে: {len(res) - len(bad)} | ❌ হয়নি: {len(bad)}")
 
 async def run_webhook_server(application: Application, base_url: str, port: int):
     await application.bot.set_webhook(url=f"{base_url}/{BOT_TOKEN}")
@@ -3850,6 +3976,8 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("support", support_command))
     application.add_handler(CommandHandler("removeloading", remove_loading_animation))
     application.add_handler(CommandHandler("syncdrive", sync_drive))
+    application.add_handler(CommandHandler("exportdb", exportdb_command))
+    application.add_handler(CommandHandler("drivelist", drivelist_command))
     application.add_handler(CommandHandler("sortall", sortall_command))
     application.add_handler(CommandHandler("version", version_command))
     application.add_handler(CommandHandler("drivecat", drivecat_command))
@@ -3871,6 +3999,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(paginate, pattern=r"^page::"))
     application.add_handler(CallbackQueryHandler(request_title, pattern=r"^request$"))
     application.add_handler(MessageHandler(filters.PHOTO, receive_poster_photo))
+    application.add_handler(MessageHandler(filters.Document.ALL, run_commands_file))
     application.add_handler(MessageHandler(filters.Sticker.ALL | filters.ANIMATION, capture_loading_animation))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
     return application
