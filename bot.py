@@ -594,6 +594,28 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
+BOT_VERSION = "2026-10-13-sort3"
+
+def _norm_order(n):
+    if not isinstance(n, dict):
+        return n
+    return {k: _norm_order(n[k]) for k in ordered_keys(n)}
+
+def normalize_db():
+    """সব টাইটেলের ভেতরের সিজন/এপিসোড/কোয়ালিটি সংখ্যা ধরে সিরিয়ালে সাজিয়ে সেভ করে (পুরো বটের জন্য)।"""
+    new = {t_: _norm_order(v) for t_, v in db.items()}
+    if json.dumps(new, ensure_ascii=False) != json.dumps(db, ensure_ascii=False):
+        db.clear()
+        db.update(new)
+        save_state("content", DB_FILE, db)
+        return True
+    return False
+
+try:
+    normalize_db()
+except Exception as _e:
+    logging.warning("normalize_db failed: %s", _e)
+
 def _squash(s):
     return re.sub(r"[^0-9a-z\u0980-\u09ff\u0900-\u097f]+", "", s.lower())
 
@@ -3359,6 +3381,17 @@ async def drivecat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_state("settings", SETTINGS_FILE, bot_settings)
     await update.message.reply_text("📂 Drive অটো-ক্যাটাগরি: " + ("চালু" if bot_settings.get("drive_auto_category") else "বন্ধ (শুধু লিংক বটে আসে)"))
 
+async def sortall_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    changed = normalize_db()
+    await update.message.reply_text("✅ সব টাইটেলের সিজন/এপিসোড/কোয়ালিটি সিরিয়ালে সাজানো হয়েছে।" if changed else "✅ আগে থেকেই সব সিরিয়ালে আছে।")
+
+async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text(f"🤖 বট ভার্সন: {BOT_VERSION}")
+
 async def drivemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/drivemap MCU/MAIN UNIVERS | Hollywood | Marvel | Main Universe  — Drive ফোল্ডার -> বটের ক্যাটাগরি"""
     if update.effective_user.id != ADMIN_ID:
@@ -3544,6 +3577,7 @@ async def drive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _tree_add(it["cat"], title, nested)
         else:
             nocat.add(title)
+    normalize_db()
     save_state("content", DB_FILE, db)
     save_state("meta", META_FILE, title_meta)
     save_state("categories", CATEGORY_FILE, category_tree)
@@ -3816,6 +3850,8 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("support", support_command))
     application.add_handler(CommandHandler("removeloading", remove_loading_animation))
     application.add_handler(CommandHandler("syncdrive", sync_drive))
+    application.add_handler(CommandHandler("sortall", sortall_command))
+    application.add_handler(CommandHandler("version", version_command))
     application.add_handler(CommandHandler("drivecat", drivecat_command))
     for _c in ("block", "unblock", "resetuser", "setlang"):
         application.add_handler(CommandHandler(_c, user_ctl_command))
