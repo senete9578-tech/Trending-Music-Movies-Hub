@@ -120,6 +120,8 @@ user_search_history = load_state("search_history", SEARCH_HISTORY_FILE, {})   # 
 title_posters = load_state("posters", POSTERS_FILE, {})   # title -> ছবির file_id অথবা URL
 CATEGORY_FILE = "categories.json"
 category_tree = load_state("categories", CATEGORY_FILE, {})   # নেস্টেড ফোল্ডার, প্রতিটা নোডে "_titles" কী-তে আসল টাইটেলের লিস্ট থাকে
+user_category_history = load_state("category_history", "category_history.json", {})   # str(user_id) -> [{title,t}] ক্যাটাগরি থেকে খুলেছে
+user_from_cat = {}   # uid -> শেষবার ক্যাটাগরি থেকে খোলা টাইটেল
 category_browse_state = {}   # user_id -> {"path": [...], "children": [("folder"|"title", name), ...]}
 category_return_path = {}    # user_id -> category path to return to when Back is pressed from an opened title
 awaiting_poster = {}   # admin এখন কোন টাইটেলের জন্য ছবি পাঠাবে (ট্রানজিয়েন্ট)
@@ -583,6 +585,11 @@ def is_leaf_level(node: dict) -> bool:
     if not node:
         return True
     return isinstance(next(iter(node.values())), str)
+
+def ordered_keys(node):
+    """সিজন/এপিসোড/কোয়ালিটি সংখ্যা ধরে সিরিয়ালে সাজায়; সংখ্যাহীন নাম আগের ক্রমেই শেষে থাকে।"""
+    keys = list(node.keys())
+    return sorted(keys, key=lambda k: (0, natural_sort_key(k)) if re.search(r"\d", k) else (1, 0))
 
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
@@ -1281,7 +1288,9 @@ def _fmt_session(sess):
 
 def user_report(u):
     name = user_names.get(str(u), str(u))
-    lines = [f"{user_emoji(u)} {name} (id {u})"]
+    lines = [f"{user_emoji(u)} {name} (id {u})" + (" 🚫 ব্লক করা" if u in bot_settings.get("blocked", []) else "")]
+    lc = user_lang.get(str(u))
+    lines.append(f"🌐 ভাষা: {LANGUAGES.get(lc, lc) if lc else 'এখনো বাছেনি'}")
     sess = user_sessions.get(str(u), [])
     if sess:
         total = 0
@@ -1306,9 +1315,16 @@ def user_report(u):
         for x in downloaded:
             if isinstance(x, dict):
                 when = to_local_time(x.get("t", ""))
-                lines.append(f"   • {x.get('title','')} ({when})" if when else f"   • {x.get('title','')}")
+                tag = " 📂 ক্যাটাগরি থেকে" if x.get("src") == "category" else ""
+                lines.append(f"   • {x.get('title','')} ({when}){tag}" if when else f"   • {x.get('title','')}{tag}")
             else:
                 lines.append(f"   • {x}")
+    cats = user_category_history.get(str(u), [])
+    if cats:
+        lines.append("📂 ক্যাটাগরি থেকে খুলেছে (সার্চ ছাড়া):")
+        for x in cats:
+            when = to_local_time(x.get("t", ""))
+            lines.append(f"   • {x.get('title','')} ({when})")
     waiting = [k for k, v in pending_requests.items() if u in v]
     if waiting:
         lines.append("📩 যা খুঁজে পায়নি (আপলোড হলে জানানো হবে):")
@@ -1362,33 +1378,153 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     for i, u in enumerate(sorted(known_users), 1):
         name = await _user_name(context, u)
-        all_lines.append(f"{user_emoji(u)} {i}. <a href=\"tg://user?id={u}\">{_html.escape(name)}</a>")
+        all_lines.append(f"{user_emoji(u)} {i}. <a href=\"tg://user?id={u}\">{_html.escape(name)}</a>" + (" 🚫" if u in bot_settings.get("blocked", []) else ""))
     all_lines += ["", "👆 নামে ক্লিক করলে তার প্রোফাইল খুলবে।",
                   "🤖 কারও কাজ জানতে বটে লেখো: <i>রহিম কি কি করেছে?</i>  অথবা  /stats নাম  (বা নম্বর)"]
     await _send_chunks(update.message, "\n".join(all_lines), parse_mode="HTML")
 
+_ADMIN_KW = re.compile(r"block|ব্লক|রিসেট|reset|ভাষা|language|ল্যাংগুয়েজ|লাঙ্গুয়েজ|কি কি|কী কী|করেছে|history|সময়|ইউজার", re.I)
+
+async def _gem(system_text, text, tokens=700):
+    return await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(
+        None, _gemini_call, system_text, [{"role": "user", "parts": [{"text": text[:800]}]}], tokens), timeout=40)
+
+def block_user(u):
+    lst = bot_settings.setdefault("blocked", [])
+    if u not in lst:
+        lst.append(u)
+        save_state("settings", SETTINGS_FILE, bot_settings)
+
+def unblock_user(u):
+    lst = bot_settings.setdefault("blocked", [])
+    if u in lst:
+        lst.remove(u)
+        save_state("settings", SETTINGS_FILE, bot_settings)
+
+def reset_user_data(u):
+    k = str(u)
+    for d in (user_lang, user_search_history, user_download_history, user_category_history):
+        d.pop(k, None)
+    save_state("languages", LANG_FILE, user_lang)
+    save_state("search_history", SEARCH_HISTORY_FILE, user_search_history)
+    save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
+    save_state("category_history", "category_history.json", user_category_history)
+    for d in (ai_history, last_search_results, pending_request, browse_state, pending_feedback, category_browse_state, category_return_path, user_from_cat):
+        d.pop(u, None)
+    changed = False
+    for key, ids in list(pending_requests.items()):
+        if u in ids:
+            ids.remove(u)
+            changed = True
+            if not ids:
+                pending_requests.pop(key, None)
+    if changed:
+        save_state("requests", REQUESTS_FILE, pending_requests)
+
+async def apply_user_action(bot, u, action, lang=None):
+    if u == ADMIN_ID:
+        return "😅 নিজের উপর এটা চলবে না।"
+    if action == "block":
+        block_user(u)
+        return "🚫 ব্লক করা হয়েছে। এখন থেকে সে বটে কোনো উত্তর পাবে না।"
+    if action == "unblock":
+        unblock_user(u)
+        return "✅ আনব্লক করা হয়েছে।"
+    if action == "reset":
+        reset_user_data(u)
+        try:
+            buttons = [[InlineKeyboardButton(n, callback_data=f"lang::{c}")] for c, n in LANGUAGES.items()]
+            await bot.send_message(u, "🌐 Select your language:", reply_markup=InlineKeyboardMarkup(buttons))
+        except Exception:
+            pass
+        return "🔄 রিসেট হয়েছে (ভাষা, সার্চ, ডাউনলোড, ক্যাটাগরি ইতিহাস মুছেছে)। তাকে নতুন করে ভাষা বাছতে বলা হয়েছে।"
+    if action == "setlang":
+        if lang not in LANGUAGES:
+            return "❓ ভাষার কোড বুঝিনি (en, hi, bn, ta, te, mr, gu)।"
+        user_lang[str(u)] = lang
+        save_state("languages", LANG_FILE, user_lang)
+        try:
+            await bot.send_message(u, f"{t(u, 'language_set')}\n\n{t(u, 'search_prompt')}")
+        except Exception:
+            pass
+        return f"🌐 ভাষা {LANGUAGES[lang]} করে দেওয়া হয়েছে এবং তাকে জানানো হয়েছে।"
+    return ""
+
+async def user_ctl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/block নাম | /unblock নাম | /resetuser নাম | /setlang নাম | bn"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    text = update.message.text or ""
+    cmd = text.split()[0][1:].split("@")[0].lower()
+    arg = text.split(" ", 1)[1].strip() if " " in text else ""
+    lang = None
+    if cmd == "setlang":
+        if "|" not in arg:
+            await update.message.reply_text("ফরম্যাট: /setlang রহিম | bn\n(en, hi, bn, ta, te, mr, gu)")
+            return
+        arg, lang = [x.strip() for x in arg.split("|", 1)]
+    action = {"block": "block", "unblock": "unblock", "resetuser": "reset", "setlang": "setlang"}.get(cmd)
+    if not arg:
+        await update.message.reply_text(f"ফরম্যাট: /{cmd} নাম (বা /stats-এর নম্বর)")
+        return
+    found = find_users(arg)
+    if not found:
+        await update.message.reply_text("😕 এই নামে কেউ নেই।")
+        return
+    if len(found) > 1:
+        await update.message.reply_text("⚠️ একাধিক মিলেছে, নম্বর দিয়ে বলো:\n" + "\n".join(
+            f"{sorted(known_users).index(x) + 1}. {user_names.get(str(x), x)}" for x in found[:10]))
+        return
+    u = found[0]
+    await update.message.reply_text(f"{user_emoji(u)} {user_names.get(str(u), u)}\n" + await apply_user_action(context.bot, u, action, lang))
+
+async def block_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    u = update.effective_user
+    if u and u.id != ADMIN_ID and u.id in bot_settings.get("blocked", []):
+        raise ApplicationHandlerStop
+
+async def _ai_pick_users(text):
+    users = "\n".join(f"{u}: {user_names.get(str(u), u)}" for u in sorted(known_users))[:6000]
+    system_text = ("The bot owner refers to a user by name (possibly written in another script or spelling). From USERS pick the ids he means (max 2). "
+                   "Reply JSON only: {\"user_ids\":[number]}.\nUSERS:\n" + users)
+    try:
+        res = await _gem(system_text, text, 200)
+        return [int(x) for x in res.get("user_ids", []) if int(x) in known_users][:2]
+    except Exception:
+        return []
+
 async def admin_user_question(update: Update, text: str) -> bool:
-    """অ্যাডমিন সাধারণ লেখায় কোনো ইউজারের নাম লিখে প্রশ্ন করলে Gemini তার ডাটা দেখে ইমোজিসহ উত্তর দেয়।"""
+    """অ্যাডমিন সাধারণ ভাষায় ইউজার সম্পর্কে প্রশ্ন করলে বা ব্লক/রিসেট/ভাষা বদলাতে বললে Gemini বুঝে করে দেয়।"""
     low = text.lower()
     hits = [u for u in sorted(known_users)
             if len(user_names.get(str(u), "").lstrip("@")) >= 3 and user_names[str(u)].lstrip("@").lower() in low][:2]
+    if not hits and _ADMIN_KW.search(text):
+        hits = await _ai_pick_users(text)
     if not hits:
         return False
     data = "\n\n".join(user_report(u) for u in hits)
     system_text = (
-        "You help the owner of a Telegram movie bot. Below is recorded data about one or two users "
-        "(times are Indian time). Answer the owner's question using ONLY this data, in the same language he writes in, "
-        "clearly and briefly, with a fitting emoji in front of every item (e.g. 🔍 search, ⬇️ download, 🕒 time, ⏱ duration, 📩 not found). "
-        "Keep each user's emoji next to his name. Never invent data.\n"
-        "Reply with JSON only: {\"reply\": string}.\n\nDATA:\n" + data
+        "You help the owner of a Telegram movie bot. Below is recorded data about one or two users (times are Indian time). "
+        "Answer the owner's question using ONLY this data, in the same language he writes in, clearly and briefly, with a fitting emoji in front of "
+        "every item (🔍 search, ⬇️ download, 📂 category, 🌐 language, 🕒 time, ⏱ duration, 📩 not found). Keep each user's emoji next to his name. Never invent data. "
+        "ALSO decide an ACTION only if the owner clearly asks for it: block (stop the user from using the bot), unblock, "
+        "reset (clear the user's history and language so he starts fresh), setlang (set his language; also give lang = one of en,hi,bn,ta,te,mr,gu). "
+        "Otherwise action = none.\n"
+        "Reply JSON only: {\"reply\": string, \"action\": \"none|block|unblock|reset|setlang\", \"lang\": string}.\n\nDATA:\n" + data
     )
     try:
-        res = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(
-            None, _gemini_call, system_text, [{"role": "user", "parts": [{"text": text[:800]}]}]), timeout=40)
-        reply = str(res.get("reply", "")).strip()
+        res = await _gem(system_text, text, 900)
     except Exception:
-        reply = ""
-    await _send_chunks(update.message, reply or data)
+        res = {}
+    reply = str(res.get("reply", "")).strip()
+    action = str(res.get("action", "none")).strip().lower()
+    out = reply or (data if action in ("", "none") else "")
+    if action in ("block", "unblock", "reset", "setlang"):
+        if len(hits) != 1:
+            out += "\n⚠️ একাধিক ইউজার মিলেছে, তাই কিছু করিনি। নম্বর বা পুরো নাম দিয়ে আবার বলো।"
+        else:
+            out += "\n\n" + await apply_user_action(update.get_bot(), hits[0], action, str(res.get("lang", "")).strip().lower())
+    await _send_chunks(update.message, out.strip() or data)
     return True
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1620,7 +1756,7 @@ async def open_nested_entry(query, uid, title, path, origin="latest"):
         return
 
     label = title if not path else f"{title} - {' / '.join(path)}"
-    browse_state[uid] = {"title": title, "path": path, "children": list(node.keys()), "floor": len(path), "origin": origin}
+    browse_state[uid] = {"title": title, "path": path, "children": ordered_keys(node), "floor": len(path), "origin": origin}
 
     if is_leaf_level(node):
         buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(node.keys())]
@@ -2003,6 +2139,7 @@ async def request_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- টাইটেল সিলেক্ট করলে (মুভি হলে কোয়ালিটি, সিরিজ হলে সিজন দেখানো) ----------
 async def open_title_flow(query, uid, title):
+    user_from_cat.pop(uid, None)
     """একটা টাইটেল সিলেক্ট হলে (সার্চ রেজাল্ট থেকে বা ক্যাটাগরি থেকে) কোয়ালিটি/সিজন দেখায়।"""
     node = db.get(title, {})
     if not node:
@@ -2013,7 +2150,7 @@ async def open_title_flow(query, uid, title):
         # সাধারণ মুভি/গান — সরাসরি কোয়ালিটি দেখাও
         # (টাইটেল সরাসরি callback_data-তে বসানো হয় না — লম্বা/বাংলা টাইটেলে Telegram-এর ৬৪-বাইট
         # লিমিট ছাড়িয়ে গিয়ে বাটন নিঃশব্দে ভেঙে যেতে পারে, তাই browse_state + ইনডেক্স ব্যবহার করা হচ্ছে)
-        browse_state[uid] = {"title": title, "path": [], "children": list(node.keys()), "floor": 0, "origin": "search"}
+        browse_state[uid] = {"title": title, "path": [], "children": ordered_keys(node), "floor": 0, "origin": "search"}
         buttons = [
             [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
             for i, q in enumerate(node.keys())
@@ -2024,7 +2161,7 @@ async def open_title_flow(query, uid, title):
         )
     else:
         # সিরিজ — সিজন (বা পরের ধাপ) দেখাও
-        browse_state[uid] = {"title": title, "path": [], "children": list(node.keys())}
+        browse_state[uid] = {"title": title, "path": [], "children": ordered_keys(node)}
         buttons = [
             [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
             for i, k in enumerate(node.keys())
@@ -2393,6 +2530,11 @@ async def category_navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(t(uid, "content_unavailable"))
     else:
         category_return_path[uid] = state["path"]
+        _h = user_category_history.setdefault(str(uid), [])
+        _h.append({"title": value if not extra_path else f"{value} - {' / '.join(extra_path)}", "t": datetime.now(timezone.utc).isoformat()})
+        del _h[:-HISTORY_LIMIT]
+        save_state("category_history", "category_history.json", user_category_history)
+        user_from_cat[uid] = value
         if query.message.photo:
             try: await query.message.delete()
             except Exception: pass
@@ -2807,7 +2949,7 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     label = f"{state['title']} - {' / '.join(state['path'])}"
 
     if is_leaf_level(node):
-        state["children"] = list(node.keys())
+        state["children"] = ordered_keys(node)
         buttons = [
             [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
             for i, q in enumerate(node.keys())
@@ -2817,7 +2959,7 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{label}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
         )
     else:
-        state["children"] = list(node.keys())
+        state["children"] = ordered_keys(node)
         buttons = [
             [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
             for i, k in enumerate(node.keys())
@@ -2845,7 +2987,7 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         label = state["title"] if not state["path"] else f"{state['title']} - {' / '.join(state['path'])}"
-        state["children"] = list(node.keys())
+        state["children"] = ordered_keys(node)
 
         if is_leaf_level(node):
             buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(node.keys())]
@@ -2918,7 +3060,8 @@ async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     label = f"{full_name} ({quality})"
 
     hist = user_download_history.setdefault(str(uid), [])
-    hist.append({"title": full_name, "t": datetime.now(timezone.utc).isoformat()})
+    hist.append({"title": full_name, "t": datetime.now(timezone.utc).isoformat(),
+                 "src": "category" if user_from_cat.get(uid) == state["title"] else "search"})
     del hist[:-HISTORY_LIMIT]
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
@@ -3134,6 +3277,8 @@ def _existing_drive_ids():
     return ids
 
 def _drive_category_for(path):
+    if not bot_settings.get("drive_auto_category"):
+        return None
     dm = bot_settings.get("drive_map", {})
     for i in range(len(path), 0, -1):
         key = "/".join(path[:i]).lower()
@@ -3203,6 +3348,16 @@ async def _ai_classify(titles):
         if t0:
             out[t0] = (can, cat or None)
     return out
+
+async def drivecat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/drivecat on|off — /syncdrive-এ অটো ক্যাটাগরি (ডিফল্ট: বন্ধ)"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = (update.message.text or "").split()
+    if len(parts) > 1 and parts[1].lower() in ("on", "off"):
+        bot_settings["drive_auto_category"] = parts[1].lower() == "on"
+        save_state("settings", SETTINGS_FILE, bot_settings)
+    await update.message.reply_text("📂 Drive অটো-ক্যাটাগরি: " + ("চালু" if bot_settings.get("drive_auto_category") else "বন্ধ (শুধু লিংক বটে আসে)"))
 
 async def drivemap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/drivemap MCU/MAIN UNIVERS | Hollywood | Marvel | Main Universe  — Drive ফোল্ডার -> বটের ক্যাটাগরি"""
@@ -3286,7 +3441,7 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     ai_used = False
     todo = sorted({it["title"] for it in plan if not it["cat"]})
-    if todo and ai_enabled():
+    if todo and ai_enabled() and bot_settings.get("drive_auto_category"):
         try:
             await msg.reply_text("🤖 এআই ক্যাটাগরি ও নাম ঠিক করছে...")
             res = await _ai_classify(todo)
@@ -3320,7 +3475,7 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
             detail = ", ".join(f"S{k.split()[-1]}:{v}ep" for k, v in sc.items()) + f" {its[0]['quality']}"
         else:
             detail = ", ".join(sorted({i["quality"] for i in its}))
-        lines.append(f"• {title} ({detail}) → {' / '.join(cat) if cat else '⚠️ ক্যাটাগরি নেই'}{' 🤖' if its[0].get('ai') else ''}")
+        lines.append(f"• {title} ({detail}) → {' / '.join(cat) if cat else '🔎 শুধু সার্চে (ক্যাটাগরিতে যাবে না)'}{' 🤖' if its[0].get('ai') else ''}")
     header = (f"📋 প্রিভিউ\n🆕 নতুন ফাইল: {len(plan)} | ⏭ আগে থেকেই আছে: {skipped_old} | 🔁 ডুপ্লিকেট: {dup}\n"
               f"🎬 টাইটেল: {len(groups)}\n\n")
     chunks, cur = [], header
@@ -3381,7 +3536,16 @@ async def drive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_state("categories", CATEGORY_FILE, category_tree)
     await q.message.reply_text(
         f"✅ হয়ে গেছে!\n🆕 যোগ: {added} ফাইল ({len(new_titles)} টাইটেল)\n⏭ বাদ: {skipped}\n"
-        f"⚠️ ক্যাটাগরি ছাড়া: {len(nocat)} টাইটেল" + (f"\n{', '.join(sorted(nocat)[:15])}" if nocat else ""))
+        f"🔎 সার্চে পাওয়া যাবে, ক্যাটাগরিতে যোগ হয়নি।")
+    lst = []
+    seen_l = set()
+    for it in plan:
+        line = it["title"] + (f" | {it['season']}" if it["series"] else "")
+        if line not in seen_l:
+            seen_l.add(line)
+            lst.append(line)
+    if lst:
+        await _send_chunks(q.message, "📋 নতুন যোগ হওয়া তালিকা (কপি করে Gemini-কে দাও):\n\n" + "\n".join(lst))
     for t_ in list(new_titles)[:30]:
         try:
             await notify_fulfilled_requests(context, t_)
@@ -3598,6 +3762,7 @@ def build_application() -> Application:
     application.add_handler(TypeHandler(Update, show_typing), group=-3)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, capture_pending_text), group=-2)
     application.add_handler(TypeHandler(Update, stop_typing), group=5)
+    application.add_handler(TypeHandler(Update, block_guard), group=-4)
     application.add_handler(TypeHandler(Update, touch_all), group=-2)
     application.add_handler(TypeHandler(Update, bulk_commands), group=-1)
     application.add_handler(CommandHandler("start", start))
@@ -3638,6 +3803,9 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("support", support_command))
     application.add_handler(CommandHandler("removeloading", remove_loading_animation))
     application.add_handler(CommandHandler("syncdrive", sync_drive))
+    application.add_handler(CommandHandler("drivecat", drivecat_command))
+    for _c in ("block", "unblock", "resetuser", "setlang"):
+        application.add_handler(CommandHandler(_c, user_ctl_command))
     application.add_handler(CommandHandler("drivemap", drivemap_command))
     application.add_handler(CallbackQueryHandler(drive_confirm, pattern=r"^sd_(ok|no)$"))
     application.add_handler(CallbackQueryHandler(reset_confirm, pattern=r"^reset_"))
