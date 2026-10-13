@@ -1759,10 +1759,10 @@ async def open_nested_entry(query, uid, title, path, origin="latest"):
     browse_state[uid] = {"title": title, "path": path, "children": ordered_keys(node), "floor": len(path), "origin": origin}
 
     if is_leaf_level(node):
-        buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(node.keys())]
+        buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(ordered_keys(node))]
         option_key = "select_quality"
     else:
-        buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(node.keys())]
+        buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(ordered_keys(node))]
         option_key = "select_option"
     buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
 
@@ -1846,7 +1846,7 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODELS = [m.strip() for m in os.environ.get("GEMINI_MODEL", "gemini-2.5-flash,gemini-2.0-flash,gemini-flash-latest").split(",") if m.strip()]
 ai_history = {}      # user_id -> [(role, text), ...] (সাম্প্রতিক কথোপকথন)
 ai_calls = {}        # user_id -> [timestamps] (ফ্রি কোটা বাঁচাতে প্রতি ইউজারের সীমা)
-AI_PER_HOUR = 25
+AI_PER_HOUR = 100
 
 def ai_enabled():
     return bool(GEMINI_KEY) and bot_settings.get("ai_on", True)
@@ -2153,7 +2153,7 @@ async def open_title_flow(query, uid, title):
         browse_state[uid] = {"title": title, "path": [], "children": ordered_keys(node), "floor": 0, "origin": "search"}
         buttons = [
             [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
-            for i, q in enumerate(node.keys())
+            for i, q in enumerate(ordered_keys(node))
         ]
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
@@ -2164,7 +2164,7 @@ async def open_title_flow(query, uid, title):
         browse_state[uid] = {"title": title, "path": [], "children": ordered_keys(node)}
         buttons = [
             [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
-            for i, k in enumerate(node.keys())
+            for i, k in enumerate(ordered_keys(node))
         ]
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
@@ -2952,7 +2952,7 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["children"] = ordered_keys(node)
         buttons = [
             [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
-            for i, q in enumerate(node.keys())
+            for i, q in enumerate(ordered_keys(node))
         ]
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
@@ -2962,7 +2962,7 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["children"] = ordered_keys(node)
         buttons = [
             [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
-            for i, k in enumerate(node.keys())
+            for i, k in enumerate(ordered_keys(node))
         ]
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
         await query.edit_message_text(
@@ -2990,10 +2990,10 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["children"] = ordered_keys(node)
 
         if is_leaf_level(node):
-            buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(node.keys())]
+            buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(ordered_keys(node))]
             option_key = "select_quality"
         else:
-            buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(node.keys())]
+            buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(ordered_keys(node))]
             option_key = "select_option"
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
 
