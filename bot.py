@@ -595,7 +595,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-14-btn2"
+BOT_VERSION = "2026-10-14-btn3"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -2093,19 +2093,19 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     last_search_results[uid] = matches
     await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
 
-_WAIT_FRAMES = ["🔍 🎬 🍿 🎵", "🎬 🔍 🍿 🎵", "🎬 🍿 🔍 🎵", "🎬 🍿 🎵 🔍", "🎬 🍿 🔍 🎵", "🎬 🔍 🍿 🎵"]
+_WAIT_FRAMES = ["🔎 ▰▱▱▱▱", "🔎 ▰▰▱▱▱", "🔎 ▰▰▰▱▱", "🔎 ▰▰▰▰▱", "🔎 ▰▰▰▰▰"]
 
 async def _wait_animation(bot, chat_id, holder):
     """উত্তর আসতে দেরি হলে (০.৭ সেকেন্ডের পর) একটা অ্যানিমেটেড মেসেজ দেখায়; উত্তর এলে মুছে যায়।"""
     try:
-        await asyncio.sleep(0.7)
+        await asyncio.sleep(0.4)
         msg = await bot.send_message(chat_id=chat_id, text=_WAIT_FRAMES[0])
         holder["msg"] = msg
         i = 1
         while True:
-            await asyncio.sleep(0.9)
+            await asyncio.sleep(0.6)
             try:
-                await msg.edit_text(_WAIT_FRAMES[i % len(_WAIT_FRAMES)])
+                await msg.edit_text(_WAIT_FRAMES[min(i, len(_WAIT_FRAMES) - 1)])
             except Exception:
                 pass
             i += 1
@@ -3058,13 +3058,13 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(t(uid, "not_found"))
 
 _CARD_TXT = {
-    "en": ("▶️ Watch", "⬇️ Download", "📤 Share", "⚠️ Broken link?", "👇 Tap a button below", "✅ Reported to admin. We will fix it soon!"),
-    "hi": ("▶️ देखें", "⬇️ डाउनलोड", "📤 शेयर", "⚠️ लिंक खराब?", "👇 नीचे बटन दबाएं", "✅ एडमिन को बता दिया गया। जल्द ठीक होगा!"),
-    "bn": ("▶️ দেখুন", "⬇️ ডাউনলোড", "📤 শেয়ার", "⚠️ লিংক কাজ করছে না?", "👇 নিচের বাটনে চাপ দিন", "✅ অ্যাডমিনকে জানানো হয়েছে। শীঘ্রই ঠিক হবে!"),
-    "ta": ("▶️ பாருங்கள்", "⬇️ பதிவிறக்கம்", "📤 பகிர்", "⚠️ லிங்க் வேலை செய்யவில்லையா?", "👇 கீழே உள்ள பொத்தானை அழுத்தவும்", "✅ அட்மினுக்கு தெரிவிக்கப்பட்டது. விரைவில் சரி செய்யப்படும்!"),
-    "te": ("▶️ చూడండి", "⬇️ డౌన్‌లోడ్", "📤 షేర్", "⚠️ లింక్ పనిచేయలేదా?", "👇 కింద బటన్ నొక్కండి", "✅ అడ్మిన్‌కు తెలియజేశాము. త్వరలో సరిచేస్తాము!"),
-    "mr": ("▶️ पहा", "⬇️ डाउनलोड", "📤 शेअर", "⚠️ लिंक चालत नाही?", "👇 खालील बटण दाबा", "✅ अॅडमिनला कळवले. लवकरच दुरुस्त होईल!"),
-    "gu": ("▶️ જુઓ", "⬇️ ડાઉનલોડ", "📤 શેર", "⚠️ લિંક કામ નથી કરતી?", "👇 નીચે બટન દબાવો", "✅ એડમિનને જણાવ્યું. જલ્દી સુધારશે!"),
+    "en": ("▶️ Watch", "⬇️ Download", "📤 Share", "🙋 Need help?", "👇 Tap a button below", "✅ Thanks! We will check and help you soon."),
+    "hi": ("▶️ देखें", "⬇️ डाउनलोड", "📤 शेयर", "🙋 मदद चाहिए?", "👇 नीचे बटन दबाएं", "✅ धन्यवाद! हम जल्द देखकर मदद करेंगे।"),
+    "bn": ("▶️ দেখুন", "⬇️ ডাউনলোড", "📤 শেয়ার", "🙋 সাহায্য লাগবে?", "👇 নিচের বাটনে চাপ দিন", "✅ ধন্যবাদ! আমরা শীঘ্রই দেখে আপনাকে সাহায্য করব।"),
+    "ta": ("▶️ பாருங்கள்", "⬇️ பதிவிறக்கம்", "📤 பகிர்", "🙋 உதவி வேண்டுமா?", "👇 கீழே உள்ள பொத்தானை அழுத்தவும்", "✅ நன்றி! விரைவில் பார்த்து உதவுவோம்."),
+    "te": ("▶️ చూడండి", "⬇️ డౌన్‌లోడ్", "📤 షేర్", "🙋 సహాయం కావాలా?", "👇 కింద బటన్ నొక్కండి", "✅ ధన్యవాదాలు! త్వరలో చూసి సహాయం చేస్తాము."),
+    "mr": ("▶️ पहा", "⬇️ डाउनलोड", "📤 शेअर", "🙋 मदत हवी आहे?", "👇 खालील बटण दाबा", "✅ धन्यवाद! आम्ही लवकरच पाहून मदत करू."),
+    "gu": ("▶️ જુઓ", "⬇️ ડાઉનલોડ", "📤 શેર", "🙋 મદદ જોઈએ છે?", "👇 નીચે બટન દબાવો", "✅ આભાર! અમે જલ્દી જોઈને મદદ કરીશું."),
 }
 _report_map = {}
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MovieSongSearch_bot").strip().lstrip("@")
@@ -3080,7 +3080,7 @@ def _link_card(uid, label, link):
     fid = (m.group(1) or m.group(2)) if m else None
     if fid:
         row1 = [InlineKeyboardButton(w, url=f"https://drive.google.com/file/d/{fid}/view"),
-                InlineKeyboardButton(d, url=f"https://drive.google.com/uc?export=download&id={fid}")]
+                InlineKeyboardButton(d, url=f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t")]
     else:
         row1 = [InlineKeyboardButton(f"{w} / {d}", url=link)]
     tok = hashlib.md5(label.encode("utf-8")).hexdigest()[:10]
@@ -3099,7 +3099,7 @@ async def report_broken(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         name = query.from_user.full_name or str(uid)
         await context.bot.send_message(
-            ADMIN_ID, f"⚠️ Broken link report\n🎬 {label}\n👤 {_html.escape(name)} ({uid})", parse_mode=None)
+            ADMIN_ID, f"🙋 Help request (link problem?)\n🎬 {label}\n👤 {_html.escape(name)} ({uid})", parse_mode=None)
     except Exception as e:
         logging.warning("report_broken: %s", e)
 
