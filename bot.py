@@ -595,7 +595,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-14-btn3"
+BOT_VERSION = "2026-10-14-btn4"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -1955,11 +1955,39 @@ def _gemini_call(system_text, contents, max_tokens=700):
         _time.sleep(1.5)
     raise RuntimeError("busy/unavailable -> " + "; ".join(errors[-6:]))
 
+import random as _random
+_OWNER_PLAIN = "Bitan Chowdhury"
+def _conv(txt, up, lo):
+    return "".join(chr(up + ord(c) - 65) if "A" <= c <= "Z" else chr(lo + ord(c) - 97) if "a" <= c <= "z" else c for c in txt)
+_SMALLCAPS = dict(zip("abcdefghijklmnopqrstuvwxyz", "ᴀʙᴄᴅᴇғɢʜɪᴊᴋʟᴍɴᴏᴘǫʀsᴛᴜᴠᴡxʏᴢ"))
+def _stylish_owner():
+    n = _OWNER_PLAIN
+    styles = [
+        lambda: _conv(n, 0x1D4D0, 0x1D4EA),   # 𝓑𝓲𝓽𝓪𝓷
+        lambda: _conv(n, 0x1D400, 0x1D41A),   # 𝐁𝐢𝐭𝐚𝐧
+        lambda: _conv(n, 0x1D56C, 0x1D586),   # 𝕭𝖎𝖙𝖆𝖓
+        lambda: _conv(n, 0x1D5D4, 0x1D5EE),   # 𝗕𝗶𝘁𝗮𝗻
+        lambda: _conv(n, 0x1D63C, 0x1D656),   # 𝘽𝙞𝙩𝙖𝙣
+        lambda: "".join(_SMALLCAPS.get(c.lower(), c) if c != " " else c for c in n),   # ʙɪᴛᴀɴ
+    ]
+    deco = ["✦ {} ✦", "⚡ {} ⚡", "👑 {}", "『{}』", "✨ {} ✨", "💎 {} 💎", "🔥 {}", "🌟 {} 🌟"]
+    return _random.choice(deco).format(_random.choice(styles)())
+
+def _style_owner(text):
+    text = text.replace("{OWNER}", "\x00")
+    text = re.sub(r"bitan\s+chowdhury", "\x00", text, flags=re.I)
+    while "\x00" in text:
+        text = text.replace("\x00", _stylish_owner(), 1)
+    return text
+
 async def ai_answer(uid, user_text):
     """Gemini-কে প্রশ্ন পাঠায়। ফেরত: {"reply": str, "titles": [...], "wants_title": bool} অথবা None।"""
     titles = list(db.keys())[:900]
     system_text = (
-        "You are \"Music & Movies AI Hub\", the friendly assistant of a Telegram bot called MovieSongSearch_bot. If asked your name or who made you, say you are Music & Movies AI Hub; never mention Gemini, Google or any AI company. "
+        "You are \"Music & Movies AI Hub\", the friendly assistant of a Telegram bot called MovieSongSearch_bot. If asked your name, say you are Music & Movies AI Hub; never mention Gemini, Google, OpenAI or any AI company or model. "
+        "OWNER/CREATOR FACTS: the owner and creator of this bot is Bitan Chowdhury. Whenever you mention his name, write it ONLY as the exact token {OWNER} (never spell the name yourself). "
+        "If asked who owns you / who is your owner: answer that your owner is {OWNER}. "
+        "If asked who made/created/trained you or where you come from: say in your own natural, confident words that you were created by the team behind the MovieSongSearch_bot (Music & Movies AI Hub), built with love by {OWNER} for movie and music lovers, and you live right here on Telegram. Never say you are a Google/Gemini/OpenAI model and never talk about training data or companies. "
         "The bot owner shares movies, web series and songs as download links. "
         "You can chat about ANYTHING (general questions, movies, songs, help), like a helpful chatbot. "
         "ALWAYS reply in the same language and script the user writes in (Bengali, Hindi, English, etc.). "
@@ -1983,7 +2011,7 @@ async def ai_answer(uid, user_text):
     contents = [{"role": r, "parts": [{"text": x}]} for r, x in hist[-6:]]
     contents.append({"role": "user", "parts": [{"text": user_text[:1500]}]})
     data = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, _gemini_call, system_text, contents), timeout=40)
-    reply = str(data.get("reply", "")).strip()
+    reply = _style_owner(str(data.get("reply", "")).strip())
     if not reply:
         return None
     valid = []
@@ -2093,7 +2121,15 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     last_search_results[uid] = matches
     await update.message.reply_text(t(uid, "results"), reply_markup=build_results_keyboard(matches, 0))
 
-_WAIT_FRAMES = ["🔎 ▰▱▱▱▱", "🔎 ▰▰▱▱▱", "🔎 ▰▰▰▱▱", "🔎 ▰▰▰▰▱", "🔎 ▰▰▰▰▰"]
+def _make_frames():
+    n, w = 8, 3
+    pos = list(range(0, n - w + 1)) + list(range(n - w - 1, 0, -1))
+    fr = []
+    for p in pos:
+        bar = "".join("▰" if p <= k < p + w else "▱" for k in range(n))
+        fr.append(f"🔎 {bar}")
+    return fr
+_WAIT_FRAMES = _make_frames()
 
 async def _wait_animation(bot, chat_id, holder):
     """উত্তর আসতে দেরি হলে (০.৭ সেকেন্ডের পর) একটা অ্যানিমেটেড মেসেজ দেখায়; উত্তর এলে মুছে যায়।"""
@@ -2105,7 +2141,7 @@ async def _wait_animation(bot, chat_id, holder):
         while True:
             await asyncio.sleep(0.6)
             try:
-                await msg.edit_text(_WAIT_FRAMES[min(i, len(_WAIT_FRAMES) - 1)])
+                await msg.edit_text(_WAIT_FRAMES[i % len(_WAIT_FRAMES)])
             except Exception:
                 pass
             i += 1
