@@ -7,6 +7,7 @@ import difflib
 import re
 import random
 import html as _html
+import hashlib
 import time as _time_mod
 from datetime import datetime, timezone
 
@@ -594,7 +595,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-13-sync5"
+BOT_VERSION = "2026-10-14-btn2"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3056,6 +3057,52 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text(t(uid, "not_found"))
 
+_CARD_TXT = {
+    "en": ("▶️ Watch", "⬇️ Download", "📤 Share", "⚠️ Broken link?", "👇 Tap a button below", "✅ Reported to admin. We will fix it soon!"),
+    "hi": ("▶️ देखें", "⬇️ डाउनलोड", "📤 शेयर", "⚠️ लिंक खराब?", "👇 नीचे बटन दबाएं", "✅ एडमिन को बता दिया गया। जल्द ठीक होगा!"),
+    "bn": ("▶️ দেখুন", "⬇️ ডাউনলোড", "📤 শেয়ার", "⚠️ লিংক কাজ করছে না?", "👇 নিচের বাটনে চাপ দিন", "✅ অ্যাডমিনকে জানানো হয়েছে। শীঘ্রই ঠিক হবে!"),
+    "ta": ("▶️ பாருங்கள்", "⬇️ பதிவிறக்கம்", "📤 பகிர்", "⚠️ லிங்க் வேலை செய்யவில்லையா?", "👇 கீழே உள்ள பொத்தானை அழுத்தவும்", "✅ அட்மினுக்கு தெரிவிக்கப்பட்டது. விரைவில் சரி செய்யப்படும்!"),
+    "te": ("▶️ చూడండి", "⬇️ డౌన్‌లోడ్", "📤 షేర్", "⚠️ లింక్ పనిచేయలేదా?", "👇 కింద బటన్ నొక్కండి", "✅ అడ్మిన్‌కు తెలియజేశాము. త్వరలో సరిచేస్తాము!"),
+    "mr": ("▶️ पहा", "⬇️ डाउनलोड", "📤 शेअर", "⚠️ लिंक चालत नाही?", "👇 खालील बटण दाबा", "✅ अॅडमिनला कळवले. लवकरच दुरुस्त होईल!"),
+    "gu": ("▶️ જુઓ", "⬇️ ડાઉનલોડ", "📤 શેર", "⚠️ લિંક કામ નથી કરતી?", "👇 નીચે બટન દબાવો", "✅ એડમિનને જણાવ્યું. જલ્દી સુધારશે!"),
+}
+_report_map = {}
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "MovieSongSearch_bot").strip().lstrip("@")
+
+def _card_txt(uid):
+    return _CARD_TXT.get(get_lang(uid), _CARD_TXT["en"])
+
+def _link_card(uid, label, link):
+    """ডাউনলোড লিংককে সুন্দর বাটনে দেয় (ক্যাপশনে কোনো লিংক দেখা যায় না)। ইউজারের ভাষায়।"""
+    w, d, sh, rp, tap, _ = _card_txt(uid)
+    caption = f"🎬 {label}\n━━━━━━━━━━━━\n{tap}\n\n{t(uid, 'thank_you')}"
+    m = re.search(r"/d/([\w-]{20,})|[?&]id=([\w-]{20,})", link or "")
+    fid = (m.group(1) or m.group(2)) if m else None
+    if fid:
+        row1 = [InlineKeyboardButton(w, url=f"https://drive.google.com/file/d/{fid}/view"),
+                InlineKeyboardButton(d, url=f"https://drive.google.com/uc?export=download&id={fid}")]
+    else:
+        row1 = [InlineKeyboardButton(f"{w} / {d}", url=link)]
+    tok = hashlib.md5(label.encode("utf-8")).hexdigest()[:10]
+    _report_map[tok] = label
+    share_url = ("https://t.me/share/url?url=" + _urlparse.quote(f"https://t.me/{BOT_USERNAME}", safe="")
+                 + "&text=" + _urlparse.quote(f"🎬 {label}", safe=""))
+    row2 = [InlineKeyboardButton(sh, url=share_url), InlineKeyboardButton(rp, callback_data=f"rep::{tok}")]
+    return caption, InlineKeyboardMarkup([row1, row2])
+
+async def report_broken(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    uid = query.from_user.id
+    tok = query.data.split("::", 1)[1]
+    label = _report_map.get(tok, "?")
+    await query.answer(_card_txt(uid)[5], show_alert=True)
+    try:
+        name = query.from_user.full_name or str(uid)
+        await context.bot.send_message(
+            ADMIN_ID, f"⚠️ Broken link report\n🎬 {label}\n👤 {_html.escape(name)} ({uid})", parse_mode=None)
+    except Exception as e:
+        logging.warning("report_broken: %s", e)
+
 async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -3087,17 +3134,17 @@ async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     del hist[:-HISTORY_LIMIT]
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
-    caption = f"{label}\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
+    caption, markup = _link_card(uid, label, link)
     poster = find_poster(state["title"], state["path"])
     if poster:
         try:
-            await query.message.reply_photo(photo=poster, caption=caption)
+            await query.message.reply_photo(photo=poster, caption=caption, reply_markup=markup)
             return
         except Exception:
             pass
-    elif await send_with_auto_poster(query.message, state["title"], state["path"], caption):
+    elif await send_with_auto_poster(query.message, state["title"], state["path"], caption, markup):
         return
-    await query.message.reply_text(caption)
+    await query.message.reply_text(caption, reply_markup=markup)
 
 # ---------- অটো পোস্টার (TMDB থেকে) ----------
 TMDB_KEY = os.environ.get("TMDB_API_KEY", "").strip()
@@ -3148,7 +3195,7 @@ def _tmdb_poster_bytes(title):
     with _urlreq.urlopen(_urlreq.Request(img_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=15) as r:
         return r.read()
 
-async def send_with_auto_poster(message, title, path, caption):
+async def send_with_auto_poster(message, title, path, caption, reply_markup=None):
     """ম্যানুয়াল পোস্টার না থাকলে TMDB থেকে এনে (লোগোসহ) ক্যাপশনের সাথে পাঠায়। সফল হলে True।"""
     if not TMDB_KEY or not bot_settings.get("auto_poster", True):
         return False
@@ -3158,7 +3205,7 @@ async def send_with_auto_poster(message, title, path, caption):
         return False
     if cached:
         try:
-            await message.reply_photo(photo=cached, caption=caption)
+            await message.reply_photo(photo=cached, caption=caption, reply_markup=reply_markup)
             return True
         except Exception:
             pass
@@ -3170,7 +3217,7 @@ async def send_with_auto_poster(message, title, path, caption):
             save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
             return False
         marked = await loop.run_in_executor(None, apply_watermark, raw)
-        msg = await message.reply_photo(photo=marked, caption=caption)
+        msg = await message.reply_photo(photo=marked, caption=caption, reply_markup=reply_markup)
         auto_posters[key] = msg.photo[-1].file_id
         save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
         return True
@@ -3211,9 +3258,17 @@ async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     del hist[:-HISTORY_LIMIT]
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
-    await query.message.reply_text(
-        f"{title} ({quality})\n{t(uid, 'download_link')}\n{link}\n\n{t(uid, 'thank_you')}"
-    )
+    caption, markup = _link_card(uid, f"{title} ({quality})", link)
+    poster = find_poster(title, [])
+    if poster:
+        try:
+            await query.message.reply_photo(photo=poster, caption=caption, reply_markup=markup)
+            return
+        except Exception:
+            pass
+    elif await send_with_auto_poster(query.message, title, [], caption, markup):
+        return
+    await query.message.reply_text(caption, reply_markup=markup)
 
 # ---------- webhook মোড (Render-এর জন্য) ----------
 # ---------- Google Drive থেকে অটো ইমপোর্ট (/syncdrive, /drivemap) ----------
@@ -3993,6 +4048,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(category_navigate, pattern=r"^catnav::"))
     application.add_handler(CallbackQueryHandler(category_back, pattern=r"^catback$"))
+    application.add_handler(CallbackQueryHandler(report_broken, pattern=r"^rep::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
     application.add_handler(CallbackQueryHandler(navigate, pattern=r"^nav::"))
     application.add_handler(CallbackQueryHandler(open_latest, pattern=r"^latestopen::"))
