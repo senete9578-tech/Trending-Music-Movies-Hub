@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-15-sec9"
+BOT_VERSION = "2026-10-15-sec10"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -4050,6 +4050,21 @@ async def _sweep_deletes(bot):
         except Exception as e:
             logging.warning("sweep: %s", type(e).__name__)
 
+_sweeper_task = {"t": None}
+
+def _ensure_sweeper(bot):
+    t = _sweeper_task["t"]
+    if t is None or t.done():
+        _sweeper_task["t"] = asyncio.create_task(_sweep_deletes(bot))
+
+async def _delayed_delete(bot, chat_id, ids, delay):
+    await asyncio.sleep(delay)
+    for m in ids:
+        try:
+            await bot.delete_message(chat_id, m)
+        except Exception:
+            pass
+
 async def security_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
     if not u:
@@ -4106,7 +4121,10 @@ async def owner_gate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent = await context.bot.send_media_group(
             chat_id=update.effective_chat.id,
             media=[InputMediaPhoto(f) for f in photos], protect_content=True)
-        _queue_delete(update.effective_chat.id, [x.message_id for x in sent], OWNER_PHOTO_TTL)
+        _ids = [x.message_id for x in sent]
+        _queue_delete(update.effective_chat.id, _ids, OWNER_PHOTO_TTL)
+        _ensure_sweeper(context.bot)
+        context.application.create_task(_delayed_delete(context.bot, update.effective_chat.id, _ids, OWNER_PHOTO_TTL))
     except Exception as e:
         logging.warning("owner photo send failed: %s", type(e).__name__)
         if not is_admin:
@@ -4320,6 +4338,7 @@ async def set_owner_pw(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
     m = await context.bot.send_message(update.effective_chat.id, "✅ নতুন পাসওয়ার্ড সেট। গণনা ০/3 থেকে শুরু। (এই মেসেজ ১০ সেকেন্ডে মুছবে)")
     _queue_delete(m.chat_id, [m.message_id], 10)
+    _ensure_sweeper(context.bot)
 
 async def owner_pw_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
