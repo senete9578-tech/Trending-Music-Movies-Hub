@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-15-sec4"
+BOT_VERSION = "2026-10-15-sec8"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -670,8 +670,34 @@ def build_results_keyboard(titles, page: int = 0):
     return InlineKeyboardMarkup(buttons)
 
 # ---------- /start ----------
+_pending_dl = {}
+
+def _tid(title):
+    return hashlib.sha1(title.encode("utf-8")).hexdigest()[:10]
+
+def _title_from_tid(tid):
+    for k in db.keys():
+        if _tid(k) == tid:
+            return k
+    return None
+
+class _SendShim:
+    """open_title_flow-এর query-এর বদলে — নতুন মেসেজ পাঠায়।"""
+    def __init__(self, bot, chat_id):
+        self.bot, self.chat_id = bot, chat_id
+    async def edit_message_text(self, text, reply_markup=None, **kw):
+        await self.bot.send_message(self.chat_id, text, reply_markup=reply_markup)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user.id, update.effective_user)
+    if context.args and context.args[0].startswith("t_") and len(context.args[0]) <= 24:
+        uid = update.effective_user.id
+        title = _title_from_tid(context.args[0][2:])
+        if title:
+            if str(uid) in user_lang:
+                await open_title_flow(_SendShim(context.bot, update.effective_chat.id), uid, title)
+                return
+            _pending_dl[uid] = title
     buttons = [
         [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
         for code, name in LANGUAGES.items()
@@ -713,6 +739,11 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texts = TEXTS[lang_code]
     await query.edit_message_text(f"{texts['language_set']}\n{texts['search_prompt']}")
+
+    pend = _pending_dl.pop(uid, None)
+    if pend and pend in db:
+        await open_title_flow(_SendShim(context.bot, uid), uid, pend)
+        return
 
     cat_text, cat_markup = render_category_level(uid, [])
     if cat_text and cat_markup.inline_keyboard:
@@ -3972,7 +4003,7 @@ _ADMIN_CMDS = {
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
-    "block", "unblock", "resetuser", "setlang", "post", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
+    "block", "unblock", "resetuser", "setlang", "post", "postall", "stoppost", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
 }
 _flood, _muted = {}, {}
 
@@ -4023,7 +4054,7 @@ async def security_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
     if not u:
         return
-    m = update.effective_message
+    m = update.message or update.edited_message   # callback-এর মেসেজ ধরা হয় না
     cmd = None
     if m is not None and m.text and m.text.startswith("/"):
         cmd = m.text[1:].split()[0].split("@")[0].lower() if m.text[1:].strip() else ""
@@ -4124,11 +4155,32 @@ async def owner_photo_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 CHANNEL_ID = (os.environ.get("CHANNEL_ID") or "@MusicMviesAIHub").strip()
 
+_postall = {"stop": False, "running": False}
+
+async def _post_one(context, hit):
+    cap = f"🎬 {hit}\n\n✅ এখন আমাদের বটে পাবেন — নিচের বাটনে ট্যাপ করুন 👇"
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🍿 বটে দেখুন / ডাউনলোড", url=f"https://t.me/{BOT_USERNAME}?start=t_{_tid(hit)}")]])
+    ph = find_poster(hit, []) or auto_posters.get(hit)
+    if ph and ph != "none":
+        try:
+            await context.bot.send_photo(CHANNEL_ID, ph, caption=cap, reply_markup=kb)
+        except Exception as e:
+            if "chat not found" in str(e).lower() or "forbidden" in str(e).lower() or "rights" in str(e).lower():
+                raise
+            await context.bot.send_message(CHANNEL_ID, cap, reply_markup=kb)
+    else:
+        await context.bot.send_message(CHANNEL_ID, cap, reply_markup=kb)
+    posted = bot_settings.setdefault("posted", [])
+    if hit not in posted:
+        posted.append(hit)
+        _save_settings()
+
+def _is_song(title):
+    v = db.get(title)
+    return isinstance(v, dict) and any("kbps" in str(k).lower() for k in v.keys())
+
 async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
-        return
-    if not CHANNEL_ID:
-        await update.message.reply_text("⚠️ Render-এ CHANNEL_ID সেট করো (যেমন @mychannel), তারপর আবার দাও।")
         return
     raw = (update.message.text or "").split(" ", 1)
     if len(raw) < 2 or not raw[1].strip():
@@ -4142,25 +4194,82 @@ async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hit = next((k for k in keys if k.lower() == low), None)
         if not hit:
             c = [k for k in keys if low in k.lower()]
-            hit = c[0] if len(c) == 1 else None
+            hit = c[0] if len(c) >= 1 else None
         if not hit:
-            c = difflib.get_close_matches(nm, keys, n=1, cutoff=0.7)
+            c = difflib.get_close_matches(nm, keys, n=1, cutoff=0.6)
             hit = c[0] if c else None
         if not hit:
-            out.append(f"❌ পাইনি: {nm}")
+            out.append(f"❌ বটে এই নামে কিছু নেই: {nm}")
             continue
-        cap = f"🎬 {hit}\n\n✅ এখন আমাদের বটে পাবেন — নিচের বাটনে ট্যাপ করুন 👇"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🍿 বটে দেখুন / ডাউনলোড", url=f"https://t.me/{BOT_USERNAME}")]])
         try:
-            ph = find_poster(hit, []) or auto_posters.get(hit)
-            if ph and ph != "none":
-                await context.bot.send_photo(CHANNEL_ID, ph, caption=cap, reply_markup=kb)
-            else:
-                await context.bot.send_message(CHANNEL_ID, cap, reply_markup=kb)
-            out.append(f"✅ পোস্ট: {hit}")
+            await _post_one(context, hit)
+            out.append(f"✅ চ্যানেলে গেছে: {hit}")
         except Exception as e:
-            out.append(f"❌ {hit}: {type(e).__name__} (বট চ্যানেলের অ্যাডমিন তো?)")
-    await update.message.reply_text("\n".join(out))
+            out.append(f"❌ {hit}: {str(e)[:160]}")
+    await update.message.reply_text("\n".join(out) + f"\n(চ্যানেল: {CHANNEL_ID})")
+
+async def channel_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    try:
+        m = await context.bot.send_message(CHANNEL_ID, "✅ টেস্ট মেসেজ — বট চ্যানেলে লিখতে পারছে")
+        await update.message.reply_text(f"✅ চ্যানেলে টেস্ট গেছে ({CHANNEL_ID})")
+    except Exception as e:
+        await update.message.reply_text(f"❌ চ্যানেল ({CHANNEL_ID}) এরর: {str(e)[:200]}\n\nচ্যানেলের Administrators-এ বট আছে? 'Post Messages' অনুমতি আছে?")
+
+async def post_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    if _postall["running"]:
+        await update.message.reply_text("⏳ আগেরটা এখনো চলছে। থামাতে /stoppost")
+        return
+    posted = set(bot_settings.get("posted", []))
+    want_songs = bool(context.args) and context.args[0].lower().startswith("song")
+    todo = [k for k in db.keys() if k not in posted and (_is_song(k) if want_songs else not _is_song(k))]
+    if not todo:
+        await update.message.reply_text("✅ সব টাইটেল আগেই পোস্ট হয়ে গেছে।")
+        return
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(f"📣 {len(todo)}টা টাইটেল একে একে পোস্ট হচ্ছে (প্রতিটা ~৪ সেকেন্ড, মোট ~{len(todo) * 4 // 60 + 1} মিনিট)। থামাতে /stoppost।")
+    _postall.update(stop=False, running=True)
+    async def runner():
+        ok = bad = 0
+        try:
+            for k in todo:
+                if _postall["stop"]:
+                    break
+                try:
+                    await _post_one(context, k)
+                    ok += 1
+                except Exception as e:
+                    bad += 1
+                    msg = str(e)
+                    if "retry" in msg.lower() or "flood" in msg.lower():
+                        await asyncio.sleep(20)
+                    elif "chat not found" in msg.lower() or "rights" in msg.lower() or "forbidden" in msg.lower():
+                        await context.bot.send_message(chat_id, f"❌ থেমে গেছে: {msg[:200]}")
+                        break
+                await asyncio.sleep(4)
+        finally:
+            _postall["running"] = False
+            try:
+                await context.bot.send_message(chat_id, f"📣 শেষ: ✅ {ok}টা, ❌ {bad}টা। বাকি থাকলে আবার /postall দাও।")
+            except Exception:
+                pass
+    context.application.create_task(runner())
+
+async def post_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    bot_settings["posted"] = []
+    _save_settings()
+    await update.message.reply_text("♻️ পোস্টের তালিকা খালি। এবার /postall দিলে সব আবার যাবে।")
+
+async def stop_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    _postall["stop"] = True
+    await update.message.reply_text("🛑 থামানো হচ্ছে")
 
 async def owner_photo_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -4350,6 +4459,10 @@ def build_application() -> Application:
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, owner_photo_add), group=-5)
     application.add_handler(CommandHandler("ownerphoto", owner_photo_arm))
     application.add_handler(CommandHandler("post", post_to_channel))
+    application.add_handler(CommandHandler("postall", post_all))
+    application.add_handler(CommandHandler("stoppost", stop_post))
+    application.add_handler(CommandHandler("postreset", post_reset))
+    application.add_handler(CommandHandler("channeltest", channel_test))
     application.add_handler(CommandHandler("ownerphotoclear", owner_photo_clear))
     application.add_handler(CommandHandler("setownerpw", set_owner_pw))
     application.add_handler(CommandHandler("ownerpwstatus", owner_pw_status))
