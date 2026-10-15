@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-15-sec8"
+BOT_VERSION = "2026-10-15-sec10"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -4003,7 +4003,7 @@ _ADMIN_CMDS = {
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
-    "block", "unblock", "resetuser", "setlang", "post", "postall", "stoppost", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
+    "block", "unblock", "resetuser", "setlang", "post", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
 }
 _flood, _muted = {}, {}
 
@@ -4049,6 +4049,21 @@ async def _sweep_deletes(bot):
             raise
         except Exception as e:
             logging.warning("sweep: %s", type(e).__name__)
+
+_sweeper_task = {"t": None}
+
+def _ensure_sweeper(bot):
+    t = _sweeper_task["t"]
+    if t is None or t.done():
+        _sweeper_task["t"] = asyncio.create_task(_sweep_deletes(bot))
+
+async def _delayed_delete(bot, chat_id, ids, delay):
+    await asyncio.sleep(delay)
+    for m in ids:
+        try:
+            await bot.delete_message(chat_id, m)
+        except Exception:
+            pass
 
 async def security_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
@@ -4106,7 +4121,10 @@ async def owner_gate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent = await context.bot.send_media_group(
             chat_id=update.effective_chat.id,
             media=[InputMediaPhoto(f) for f in photos], protect_content=True)
-        _queue_delete(update.effective_chat.id, [x.message_id for x in sent], OWNER_PHOTO_TTL)
+        _ids = [x.message_id for x in sent]
+        _queue_delete(update.effective_chat.id, _ids, OWNER_PHOTO_TTL)
+        _ensure_sweeper(context.bot)
+        context.application.create_task(_delayed_delete(context.bot, update.effective_chat.id, _ids, OWNER_PHOTO_TTL))
     except Exception as e:
         logging.warning("owner photo send failed: %s", type(e).__name__)
         if not is_admin:
@@ -4265,6 +4283,34 @@ async def post_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _save_settings()
     await update.message.reply_text("♻️ পোস্টের তালিকা খালি। এবার /postall দিলে সব আবার যাবে।")
 
+async def repost_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """চ্যানেলের সব পুরনো পোস্ট মুছে, নতুন লিংকসহ সব আবার পোস্ট করে।"""
+    if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    if _postall["running"]:
+        await update.message.reply_text("⏳ পোস্টিং চলছে। আগে /stoppost দাও।")
+        return
+    try:
+        tmp = await context.bot.send_message(CHANNEL_ID, "…")
+    except Exception as e:
+        await update.message.reply_text(f"❌ চ্যানেলে লিখতে পারছি না: {str(e)[:200]}")
+        return
+    last = tmp.message_id
+    await update.message.reply_text(f"🧹 চ্যানেলের পুরনো পোস্ট মোছা হচ্ছে (১–{last})…")
+    done = 0
+    for i in range(1, last + 1, 100):
+        ids = list(range(i, min(i + 100, last + 1)))
+        try:
+            await context.bot.delete_messages(CHANNEL_ID, ids)
+            done += 1
+        except Exception as e:
+            logging.warning("wipe: %s", type(e).__name__)
+        await asyncio.sleep(1)
+    bot_settings["posted"] = []
+    _save_settings()
+    context.args = []
+    await post_all(update, context)
+
 async def stop_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -4292,6 +4338,7 @@ async def set_owner_pw(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
     m = await context.bot.send_message(update.effective_chat.id, "✅ নতুন পাসওয়ার্ড সেট। গণনা ০/3 থেকে শুরু। (এই মেসেজ ১০ সেকেন্ডে মুছবে)")
     _queue_delete(m.chat_id, [m.message_id], 10)
+    _ensure_sweeper(context.bot)
 
 async def owner_pw_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
@@ -4461,6 +4508,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("post", post_to_channel))
     application.add_handler(CommandHandler("postall", post_all))
     application.add_handler(CommandHandler("stoppost", stop_post))
+    application.add_handler(CommandHandler("repostall", repost_all))
     application.add_handler(CommandHandler("postreset", post_reset))
     application.add_handler(CommandHandler("channeltest", channel_test))
     application.add_handler(CommandHandler("ownerphotoclear", owner_photo_clear))
