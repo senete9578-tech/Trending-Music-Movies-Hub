@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-15-sec6"
+BOT_VERSION = "2026-10-15-sec7"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3972,7 +3972,7 @@ _ADMIN_CMDS = {
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
-    "block", "unblock", "resetuser", "setlang", "post", "postall", "stoppost", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
+    "block", "unblock", "resetuser", "setlang", "post", "postall", "stoppost", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
 }
 _flood, _muted = {}, {}
 
@@ -4193,7 +4193,8 @@ async def post_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⏳ আগেরটা এখনো চলছে। থামাতে /stoppost")
         return
     posted = set(bot_settings.get("posted", []))
-    todo = [k for k in db.keys() if k not in posted and not _is_song(k)]
+    want_songs = bool(context.args) and context.args[0].lower().startswith("song")
+    todo = [k for k in db.keys() if k not in posted and (_is_song(k) if want_songs else not _is_song(k))]
     if not todo:
         await update.message.reply_text("✅ সব টাইটেল আগেই পোস্ট হয়ে গেছে।")
         return
@@ -4225,6 +4226,13 @@ async def post_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
     context.application.create_task(runner())
+
+async def post_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    bot_settings["posted"] = []
+    _save_settings()
+    await update.message.reply_text("♻️ পোস্টের তালিকা খালি। এবার /postall দিলে সব আবার যাবে।")
 
 async def stop_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -4422,6 +4430,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("post", post_to_channel))
     application.add_handler(CommandHandler("postall", post_all))
     application.add_handler(CommandHandler("stoppost", stop_post))
+    application.add_handler(CommandHandler("postreset", post_reset))
     application.add_handler(CommandHandler("channeltest", channel_test))
     application.add_handler(CommandHandler("ownerphotoclear", owner_photo_clear))
     application.add_handler(CommandHandler("setownerpw", set_owner_pw))
