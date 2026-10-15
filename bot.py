@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-15-sec1"
+BOT_VERSION = "2026-10-15-sec3"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3967,7 +3967,7 @@ _ADMIN_CMDS = {
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
-    "block", "unblock", "resetuser", "setlang", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
+    "block", "unblock", "resetuser", "setlang", "post", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
 }
 _flood, _muted = {}, {}
 
@@ -4077,17 +4077,85 @@ async def owner_gate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             st["uses"] = max(0, st.get("uses", 1) - 1); _save_settings()
     raise ApplicationHandlerStop
 
-async def owner_photo_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+_owner_photo_armed = {"until": 0.0}
+
+async def owner_photo_arm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    _owner_photo_armed["until"] = _time_mod.time() + 600
+    await update.message.reply_text("📸 এখন ১০ মিনিট যে ছবি পাঠাবে (গ্যালারি থেকে বা File হিসেবে) সেভ হবে। সর্বোচ্চ ৩টা।")
+
+async def owner_photo_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg or update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    armed = _owner_photo_armed["until"] > _time_mod.time()
+    if not (armed or (msg.caption or "").startswith("/ownerphoto")):
         return
     lst = bot_settings.setdefault("owner_photos", [])
     if len(lst) >= 3:
-        await update.message.reply_text("⚠️ ৩টা ছবি আগেই আছে। আগে /ownerphotoclear দাও।")
+        await msg.reply_text("⚠️ ৩টা ছবি আগেই আছে। আগে /ownerphotoclear দাও।")
         raise ApplicationHandlerStop
-    lst.append(update.message.photo[-1].file_id)
+    try:
+        if msg.photo:
+            fid = msg.photo[-1].file_id
+        else:
+            f = await msg.document.get_file()
+            raw = bytes(await f.download_as_bytearray())
+            tmp = await context.bot.send_photo(update.effective_chat.id, raw)
+            fid = tmp.photo[-1].file_id
+            try:
+                await tmp.delete()
+            except Exception:
+                pass
+    except Exception as e:
+        await msg.reply_text("❌ ছবি নেওয়া গেল না, আবার পাঠাও।")
+        logging.warning("owner photo add: %s", type(e).__name__)
+        raise ApplicationHandlerStop
+    lst.append(fid)
     _save_settings()
-    await update.message.reply_text(f"✅ ছবি সেভ ({len(lst)}/3)")
+    await msg.reply_text(f"✅ ছবি সেভ ({len(lst)}/3)")
     raise ApplicationHandlerStop
+
+CHANNEL_ID = (os.environ.get("CHANNEL_ID") or "@MusicMviesAIHub").strip()
+
+async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    if not CHANNEL_ID:
+        await update.message.reply_text("⚠️ Render-এ CHANNEL_ID সেট করো (যেমন @mychannel), তারপর আবার দাও।")
+        return
+    raw = (update.message.text or "").split(" ", 1)
+    if len(raw) < 2 or not raw[1].strip():
+        await update.message.reply_text("ব্যবহার: /post টাইটেল  (একাধিক হলে | দিয়ে আলাদা)")
+        return
+    names = [x.strip() for x in raw[1].split("|") if x.strip()][:10]
+    keys = list(db.keys())
+    out = []
+    for nm in names:
+        low = nm.lower()
+        hit = next((k for k in keys if k.lower() == low), None)
+        if not hit:
+            c = [k for k in keys if low in k.lower()]
+            hit = c[0] if len(c) == 1 else None
+        if not hit:
+            c = difflib.get_close_matches(nm, keys, n=1, cutoff=0.7)
+            hit = c[0] if c else None
+        if not hit:
+            out.append(f"❌ পাইনি: {nm}")
+            continue
+        cap = f"🎬 {hit}\n\n✅ এখন আমাদের বটে পাবেন — নিচের বাটনে ট্যাপ করুন 👇"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🍿 বটে দেখুন / ডাউনলোড", url=f"https://t.me/{BOT_USERNAME}")]])
+        try:
+            ph = find_poster(hit, []) or auto_posters.get(hit)
+            if ph and ph != "none":
+                await context.bot.send_photo(CHANNEL_ID, ph, caption=cap, reply_markup=kb)
+            else:
+                await context.bot.send_message(CHANNEL_ID, cap, reply_markup=kb)
+            out.append(f"✅ পোস্ট: {hit}")
+        except Exception as e:
+            out.append(f"❌ {hit}: {type(e).__name__} (বট চ্যানেলের অ্যাডমিন তো?)")
+    await update.message.reply_text("\n".join(out))
 
 async def owner_photo_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -4274,7 +4342,9 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(send_file_nav, pattern=r"^getnav::"))
     application.add_handler(CallbackQueryHandler(paginate, pattern=r"^page::"))
     application.add_handler(CallbackQueryHandler(request_title, pattern=r"^request$"))
-    application.add_handler(MessageHandler(filters.PHOTO & filters.CaptionRegex(r"^/ownerphoto"), owner_photo_add))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, owner_photo_add), group=-5)
+    application.add_handler(CommandHandler("ownerphoto", owner_photo_arm))
+    application.add_handler(CommandHandler("post", post_to_channel))
     application.add_handler(CommandHandler("ownerphotoclear", owner_photo_clear))
     application.add_handler(CommandHandler("setownerpw", set_owner_pw))
     application.add_handler(CommandHandler("ownerpwstatus", owner_pw_status))
