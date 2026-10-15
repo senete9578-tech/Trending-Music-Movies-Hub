@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-15-sec10"
+BOT_VERSION = "2026-10-15-sec11"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3997,7 +3997,7 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET") or hashlib.sha256((str(BOT_TOK
 _PW_SALT = "mshub-owner-v1"
 _PW_DEFAULT_HASH = "1535e14945f34b5c65421cf88cdcb40a13a9ec1fed15ac5b366c74e5155019eb"
 OWNER_PW_MAX = 3          # নন-অ্যাডমিন সর্বোচ্চ কতবার পাসওয়ার্ড কাজ করবে
-OWNER_PHOTO_TTL = 30      # সেকেন্ড পর ছবি মুছবে
+OWNER_PHOTO_TTL = 15      # সেকেন্ড পর ছবি মুছবে
 _ADMIN_CMDS = {
     "add", "addseries", "addmovie", "rename", "migrate", "moveepisode", "removeepisode", "remove", "list", "stats",
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
