@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-16-wa3"
+BOT_VERSION = "2026-10-16-wa4"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -4283,7 +4283,7 @@ async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _save_settings()
     lm = len([k for k in keys if k not in done and not _is_song(k)])
     ls = len([k for k in keys if k not in done and _is_song(k)])
-    await update.message.reply_text(f"✅ {len(todo)}টি পাঠালাম।\nবাকি: মুভি {lm}টি, গান {ls}টি। (মোট বটে: {len(keys)})\nগানের জন্য: /wa songs 5")
+    await update.message.reply_text(f"✅ {len(todo)}টি পাঠালাম।\nবাকি: মুভি {lm}টি, গান {ls}টি। (মোট বটে: {len(keys)})\nগানের জন্য: /wa songs 5\nলিংক-বেস: {base or "NONE-t.me"}")
 
 async def post_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
@@ -4438,7 +4438,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         img = f'<meta property="og:image" content="{base_url.rstrip("/")}/p/{tid}.jpg">' if (ph and ph != "none") else ""
         name = _html.escape(t)
         page = (f'<!doctype html><html><head><meta charset="utf-8"><title>{name}</title>'
-                f'<meta property="og:type" content="website"><meta property="og:title" content="🎬 {name}">'
+                f'<meta property="og:type" content="website"><meta property="og:site_name" content="Music &amp; Movies AI Hub"><meta property="og:image:type" content="image/jpeg"><meta property="og:title" content="🎬 {name}">'
                 f'<meta property="og:description" content="Download in Telegram: {name}">'
                 f'<meta property="og:url" content="{base_url.rstrip("/")}/m/{tid}">{img}'
                 f'<meta name="twitter:card" content="summary_large_image">'
@@ -4458,6 +4458,16 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
             try:
                 f = await application.bot.get_file(ph)
                 data = bytes(await f.download_as_bytearray())
+                try:
+                    from PIL import Image
+                    import io as _io
+                    im = Image.open(_io.BytesIO(data)).convert("RGB")
+                    im.thumbnail((800, 1200))
+                    buf = _io.BytesIO()
+                    im.save(buf, "JPEG", quality=80, optimize=True)
+                    data = buf.getvalue()
+                except Exception:
+                    pass
             except Exception:
                 return PlainTextResponse("Error", status_code=502)
             if len(_pcache) > 200:
