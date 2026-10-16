@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-16-wa1"
+BOT_VERSION = "2026-10-16-wa2"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -4241,7 +4241,11 @@ async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/wa -> পরের ৩টি, /wa 10 -> পরের ১০টি, /wa নাম -> সেই মুভি, /wa reset -> নতুন করে শুরু"""
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
         return
-    arg = " ".join(context.args).strip() if context.args else ""
+    args = list(context.args or [])
+    songs = bool(args) and args[0].lower() == "songs"
+    if songs:
+        args = args[1:]
+    arg = " ".join(args).strip()
     done = bot_settings.setdefault("wa_done", [])
     keys = list(db.keys())
     if arg.lower() == "reset":
@@ -4259,20 +4263,20 @@ async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         todo = [hit]
     else:
         n = min(int(arg), 10) if arg else 3
-        todo = [k for k in keys if k not in done and not _is_song(k)][:n]
+        todo = [k for k in keys if k not in done and _is_song(k) == songs][:n]
         if not todo:
-            await update.message.reply_text("✅ সব মুভি WhatsApp-এর জন্য পাঠানো হয়ে গেছে। নতুন মুভি যোগ হলে আবার /wa দাও।")
+            await update.message.reply_text("✅ এই ধরনের সব পাঠানো হয়ে গেছে। গান হলে: /wa songs 5")
             return
     for t in todo:
-        cap = (f"🎬 {t}\n\n✅ ডাউনলোড করতে ট্যাপ করুন 👇\n"
+        cap = (f"{'🎵' if _is_song(t) else '🎬'} {t}\n\n✅ Download here 👇\n"
                f"https://t.me/{BOT_USERNAME}?start=t_{_tid(t)}\n\n"
-               f"📢 আরও মুভি: https://t.me/MusicMviesAIHub")
+               f"📢 More movies & songs: https://t.me/MusicMviesAIHub")
         ph = find_poster(t, []) or auto_posters.get(t)
         try:
             if ph and ph != "none":
                 await context.bot.send_photo(update.effective_chat.id, ph, caption=cap)
             else:
-                await context.bot.send_message(update.effective_chat.id, "🖼 পোস্টার নেই\n\n" + cap, disable_web_page_preview=True)
+                await context.bot.send_message(update.effective_chat.id, "🖼 (no poster)\n\n" + cap, disable_web_page_preview=True)
         except Exception as e:
             await context.bot.send_message(update.effective_chat.id, f"❌ {t}: {str(e)[:120]}")
             continue
@@ -4280,8 +4284,9 @@ async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             done.append(t)
         await asyncio.sleep(0.6)
     _save_settings()
-    left = len([k for k in keys if k not in done and not _is_song(k)])
-    await update.message.reply_text(f"✅ {len(todo)}টি পাঠালাম। বাকি: {left}টি। পরেরগুলোর জন্য আবার /wa দাও।")
+    lm = len([k for k in keys if k not in done and not _is_song(k)])
+    ls = len([k for k in keys if k not in done and _is_song(k)])
+    await update.message.reply_text(f"✅ {len(todo)}টি পাঠালাম।\nবাকি: মুভি {lm}টি, গান {ls}টি। (মোট বটে: {len(keys)})\nগানের জন্য: /wa songs 5")
 
 async def post_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
