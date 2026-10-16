@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-15-sec11"
+BOT_VERSION = "2026-10-16-wa1"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -4003,7 +4003,7 @@ _ADMIN_CMDS = {
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
-    "block", "unblock", "resetuser", "setlang", "post", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
+    "block", "unblock", "resetuser", "setlang", "post", "wa", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
 }
 _flood, _muted = {}, {}
 
@@ -4234,6 +4234,54 @@ async def channel_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ চ্যানেলে টেস্ট গেছে ({CHANNEL_ID})")
     except Exception as e:
         await update.message.reply_text(f"❌ চ্যানেল ({CHANNEL_ID}) এরর: {str(e)[:200]}\n\nচ্যানেলের Administrators-এ বট আছে? 'Post Messages' অনুমতি আছে?")
+
+WA_CHANNEL = os.environ.get("WA_CHANNEL", "https://whatsapp.com/channel/0029Vb91XRJ9WtCCJUayoK2t")
+
+async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/wa -> পরের ৩টি, /wa 10 -> পরের ১০টি, /wa নাম -> সেই মুভি, /wa reset -> নতুন করে শুরু"""
+    if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    arg = " ".join(context.args).strip() if context.args else ""
+    done = bot_settings.setdefault("wa_done", [])
+    keys = list(db.keys())
+    if arg.lower() == "reset":
+        done.clear(); _save_settings()
+        await update.message.reply_text("✅ WhatsApp তালিকা নতুন করে শুরু।")
+        return
+    if arg and not arg.isdigit():
+        low = arg.lower()
+        hit = next((k for k in keys if k.lower() == low), None) \
+            or next((k for k in keys if low in k.lower()), None) \
+            or (difflib.get_close_matches(arg, keys, n=1, cutoff=0.6) or [None])[0]
+        if not hit:
+            await update.message.reply_text(f"❌ বটে এই নামে কিছু নেই: {arg}")
+            return
+        todo = [hit]
+    else:
+        n = min(int(arg), 10) if arg else 3
+        todo = [k for k in keys if k not in done and not _is_song(k)][:n]
+        if not todo:
+            await update.message.reply_text("✅ সব মুভি WhatsApp-এর জন্য পাঠানো হয়ে গেছে। নতুন মুভি যোগ হলে আবার /wa দাও।")
+            return
+    for t in todo:
+        cap = (f"🎬 {t}\n\n✅ ডাউনলোড করতে ট্যাপ করুন 👇\n"
+               f"https://t.me/{BOT_USERNAME}?start=t_{_tid(t)}\n\n"
+               f"📢 আরও মুভি: https://t.me/MusicMviesAIHub")
+        ph = find_poster(t, []) or auto_posters.get(t)
+        try:
+            if ph and ph != "none":
+                await context.bot.send_photo(update.effective_chat.id, ph, caption=cap)
+            else:
+                await context.bot.send_message(update.effective_chat.id, "🖼 পোস্টার নেই\n\n" + cap, disable_web_page_preview=True)
+        except Exception as e:
+            await context.bot.send_message(update.effective_chat.id, f"❌ {t}: {str(e)[:120]}")
+            continue
+        if t not in done:
+            done.append(t)
+        await asyncio.sleep(0.6)
+    _save_settings()
+    left = len([k for k in keys if k not in done and not _is_song(k)])
+    await update.message.reply_text(f"✅ {len(todo)}টি পাঠালাম। বাকি: {left}টি। পরেরগুলোর জন্য আবার /wa দাও।")
 
 async def post_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
@@ -4506,6 +4554,7 @@ def build_application() -> Application:
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, owner_photo_add), group=-5)
     application.add_handler(CommandHandler("ownerphoto", owner_photo_arm))
     application.add_handler(CommandHandler("post", post_to_channel))
+    application.add_handler(CommandHandler("wa", wa_cmd))
     application.add_handler(CommandHandler("postall", post_all))
     application.add_handler(CommandHandler("stoppost", stop_post))
     application.add_handler(CommandHandler("repostall", repost_all))
