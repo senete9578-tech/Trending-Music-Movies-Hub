@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-16-wa2"
+BOT_VERSION = "2026-10-16-wa3"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -4267,16 +4267,13 @@ async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not todo:
             await update.message.reply_text("✅ এই ধরনের সব পাঠানো হয়ে গেছে। গান হলে: /wa songs 5")
             return
+    base = (os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
     for t in todo:
-        cap = (f"{'🎵' if _is_song(t) else '🎬'} {t}\n\n✅ Download here 👇\n"
-               f"https://t.me/{BOT_USERNAME}?start=t_{_tid(t)}\n\n"
+        link = f"{base}/m/{_tid(t)}" if base else f"https://t.me/{BOT_USERNAME}?start=t_{_tid(t)}"
+        cap = (f"{'🎵' if _is_song(t) else '🎬'} {t}\n\n✅ Download here 👇\n{link}\n\n"
                f"📢 More movies & songs: https://t.me/MusicMviesAIHub")
-        ph = find_poster(t, []) or auto_posters.get(t)
         try:
-            if ph and ph != "none":
-                await context.bot.send_photo(update.effective_chat.id, ph, caption=cap)
-            else:
-                await context.bot.send_message(update.effective_chat.id, "🖼 (no poster)\n\n" + cap, disable_web_page_preview=True)
+            await context.bot.send_message(update.effective_chat.id, cap)
         except Exception as e:
             await context.bot.send_message(update.effective_chat.id, f"❌ {t}: {str(e)[:120]}")
             continue
@@ -4422,7 +4419,55 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
     async def health(request: Request) -> PlainTextResponse:
         return PlainTextResponse("OK")
 
+    from starlette.responses import HTMLResponse, RedirectResponse
+    import html as _html
+    _pcache = {}
+
+    def _poster_of(tid):
+        t = _title_from_tid(tid)
+        if not t:
+            return None, None
+        return t, (find_poster(t, []) or auto_posters.get(t))
+
+    async def share_page(request: Request) -> Response:
+        tid = request.path_params["tid"]
+        t, ph = _poster_of(tid)
+        if not t:
+            return PlainTextResponse("Not found", status_code=404)
+        dest = f"https://t.me/{BOT_USERNAME}?start=t_{tid}"
+        img = f'<meta property="og:image" content="{base_url.rstrip("/")}/p/{tid}.jpg">' if (ph and ph != "none") else ""
+        name = _html.escape(t)
+        page = (f'<!doctype html><html><head><meta charset="utf-8"><title>{name}</title>'
+                f'<meta property="og:type" content="website"><meta property="og:title" content="🎬 {name}">'
+                f'<meta property="og:description" content="Download in Telegram: {name}">'
+                f'<meta property="og:url" content="{base_url.rstrip("/")}/m/{tid}">{img}'
+                f'<meta name="twitter:card" content="summary_large_image">'
+                f'<script>location.replace({json.dumps(dest)})</script></head>'
+                f'<body><a href="{dest}">Open in Telegram</a></body></html>')
+        return HTMLResponse(page)
+
+    async def poster_img(request: Request) -> Response:
+        tid = request.path_params["tid"]
+        t, ph = _poster_of(tid)
+        if not t or not ph or ph == "none":
+            return PlainTextResponse("No poster", status_code=404)
+        if str(ph).startswith("http"):
+            return RedirectResponse(str(ph))
+        data = _pcache.get(tid)
+        if data is None:
+            try:
+                f = await application.bot.get_file(ph)
+                data = bytes(await f.download_as_bytearray())
+            except Exception:
+                return PlainTextResponse("Error", status_code=502)
+            if len(_pcache) > 200:
+                _pcache.clear()
+            _pcache[tid] = data
+        return Response(data, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
     starlette_app = Starlette(routes=[
+        Route("/m/{tid}", share_page, methods=["GET"]),
+        Route("/p/{tid}.jpg", poster_img, methods=["GET"]),
         Route("/", health, methods=["GET"]),
         Route(f"/{BOT_TOKEN}", telegram_webhook, methods=["POST"]),
     ])
