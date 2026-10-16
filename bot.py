@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-16-wa4"
+BOT_VERSION = "2026-10-16-wa5"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -4268,6 +4268,7 @@ async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ এই ধরনের সব পাঠানো হয়ে গেছে। গান হলে: /wa songs 5")
             return
     base = (os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+    _nop = [t for t in todo if not (find_poster(t, []) or auto_posters.get(t)) or (find_poster(t, []) or auto_posters.get(t)) == "none"]
     for t in todo:
         link = f"{base}/m/{_tid(t)}" if base else f"https://t.me/{BOT_USERNAME}?start=t_{_tid(t)}"
         cap = (f"{'🎵' if _is_song(t) else '🎬'} {t}\n\n✅ Download here 👇\n{link}\n\n"
@@ -4283,7 +4284,7 @@ async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _save_settings()
     lm = len([k for k in keys if k not in done and not _is_song(k)])
     ls = len([k for k in keys if k not in done and _is_song(k)])
-    await update.message.reply_text(f"✅ {len(todo)}টি পাঠালাম।\nবাকি: মুভি {lm}টি, গান {ls}টি। (মোট বটে: {len(keys)})\nগানের জন্য: /wa songs 5\nলিংক-বেস: {base or "NONE-t.me"}")
+    await update.message.reply_text(f"✅ {len(todo)}টি পাঠালাম।\nবাকি: মুভি {lm}টি, গান {ls}টি। (মোট বটে: {len(keys)})\nগানের জন্য: /wa songs 5\nলিংক-বেস: {base or "NONE-t.me"}\n🖼 পোস্টার নেই: {", ".join(_nop) if _nop else "কোনোটাই বাদ নেই"}\nছবি টেস্ট: {base}/p/{_tid(todo[0])}.jpg")
 
 async def post_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
