@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-17-fest5"
+BOT_VERSION = "2026-10-17-fest6"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3294,6 +3294,44 @@ def _tmdb_poster_bytes(title, path=None):
     with _urlreq.urlopen(_urlreq.Request(img_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=15) as r:
         return r.read()
 
+_none_retry = set()
+
+async def ensure_poster(bot, title, path=None):
+    """পোস্টারের file_id দেয়: হাতে সেট করা > সেভ করা > না থাকলে এখনই TMDB থেকে এনে সেভ করে।"""
+    path = path or []
+    ph = find_poster(title, path)
+    if ph:
+        return ph
+    key = poster_key(title, path)
+    cached = auto_posters.get(key)
+    if cached and cached != "none":
+        return cached
+    if cached == "none" and key in _none_retry:
+        return None
+    if not TMDB_KEY or not bot_settings.get("auto_poster", True):
+        return None
+    _none_retry.add(key)
+    try:
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(None, _tmdb_poster_bytes, title, path)
+        if not raw:
+            auto_posters[key] = "none"
+            save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
+            return None
+        marked = await loop.run_in_executor(None, apply_watermark, raw)
+        m = await bot.send_photo(ADMIN_ID, marked)
+        fid = m.photo[-1].file_id
+        try:
+            await bot.delete_message(ADMIN_ID, m.message_id)
+        except Exception:
+            pass
+        auto_posters[key] = fid
+        save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
+        return fid
+    except Exception as e:
+        logging.warning("ensure_poster failed: %s", type(e).__name__)
+        return None
+
 async def send_with_auto_poster(message, title, path, caption, reply_markup=None):
     """ম্যানুয়াল পোস্টার না থাকলে TMDB থেকে এনে (লোগোসহ) ক্যাপশনের সাথে পাঠায়। সফল হলে True।"""
     if not TMDB_KEY or not bot_settings.get("auto_poster", True):
@@ -4345,7 +4383,7 @@ _postall = {"stop": False, "running": False}
 async def _post_one(context, hit):
     cap = f"🎬 {hit}\n\n✅ এখন আমাদের বটে পাবেন — নিচের বাটনে ট্যাপ করুন 👇"
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("🍿 বটে দেখুন / ডাউনলোড", url=f"https://t.me/{BOT_USERNAME}?start=t_{_tid(hit)}")]])
-    ph = find_poster(hit, []) or auto_posters.get(hit)
+    ph = await ensure_poster(context.bot, hit)
     if ph and ph != "none":
         try:
             await context.bot.send_photo(CHANNEL_ID, ph, caption=cap, reply_markup=kb)
@@ -4435,8 +4473,10 @@ async def wa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ এই ধরনের সব পাঠানো হয়ে গেছে। গান হলে: /wa songs 5")
             return
     base = (os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
-    _nop = [t for t in todo if not (find_poster(t, []) or auto_posters.get(t)) or (find_poster(t, []) or auto_posters.get(t)) == "none"]
+    _nop = []
     for t in todo:
+        if not await ensure_poster(context.bot, t):
+            _nop.append(t)
         link = f"{base}/m/{_tid(t)}" if base else f"https://t.me/{BOT_USERNAME}?start=t_{_tid(t)}"
         cap = (f"{'🎵' if _is_song(t) else '🎬'} {t}\n\n✅ Download here 👇\n{link}\n\n"
                f"📢 More movies & songs: https://t.me/MusicMviesAIHub")
@@ -4591,15 +4631,15 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
     import html as _html
     _pcache = {}
 
-    def _poster_of(tid):
+    async def _poster_of(tid):
         t = _title_from_tid(tid)
         if not t:
             return None, None
-        return t, (find_poster(t, []) or auto_posters.get(t))
+        return t, await ensure_poster(application.bot, t)
 
     async def share_page(request: Request) -> Response:
         tid = request.path_params["tid"]
-        t, ph = _poster_of(tid)
+        t, ph = await _poster_of(tid)
         if not t:
             return PlainTextResponse("Not found", status_code=404)
         dest = f"https://t.me/{BOT_USERNAME}?start=t_{tid}"
@@ -4616,7 +4656,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
 
     async def poster_img(request: Request) -> Response:
         tid = request.path_params["tid"]
-        t, ph = _poster_of(tid)
+        t, ph = await _poster_of(tid)
         if not t or not ph or ph == "none":
             return PlainTextResponse("No poster", status_code=404)
         if str(ph).startswith("http"):
