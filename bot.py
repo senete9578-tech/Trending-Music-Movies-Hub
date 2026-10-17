@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-16-wa5"
+BOT_VERSION = "2026-10-17-fest4"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3225,7 +3225,7 @@ AUTO_POSTERS_FILE = "auto_posters.json"
 auto_posters = load_state("auto_posters", AUTO_POSTERS_FILE, {})   # key -> file_id অথবা "none"
 
 _NOISE = re.compile(r"\b(hindi|dubbed|dual audio|english|tamil|telugu|bengali|bangla|marathi|gujarati|"
-                    r"720p|1080p|480p|2160p|4k|hd|full movie|movie|web series|series|season\s*\d+|part\s*\d+|"
+                    r"720p|1080p|480p|2160p|4k|hd|full movie|movie|web series|series|season\s*\d+|"
                     r"episode\s*\d+|s\d+e\d+|so\d+|eo\d+|vol\.?\s*\d+|final)\b", re.I)
 
 def _clean_for_tmdb(title):
@@ -3234,6 +3234,8 @@ def _clean_for_tmdb(title):
     if m:
         year = m.group(0)
     q = re.sub(r"\b(19|20)\d{2}\b", " ", title)
+    q = re.sub(r"\bpart[\s\-]*([2-9])\b", r" \1 ", q, flags=re.I)   # Part 2 -> 2 (সিক্যুয়েল ঠিক রাখতে)
+    q = re.sub(r"\bpart[\s\-]*1\b", " ", q, flags=re.I)
     q = _NOISE.sub(" ", q)
     q = re.sub(r"[\[\]()_\-]+", " ", q)
     q = re.sub(r"\s+", " ", q).strip()
@@ -3242,6 +3244,7 @@ def _clean_for_tmdb(title):
 def _tmdb_poster_bytes(title):
     """TMDB-তে নাম খুঁজে পোস্টারের ছবির bytes ফেরত দেয় (না পেলে None)।"""
     import urllib.parse
+    title = (bot_settings.get("poster_alias") or {}).get(title, title)
     q, year = _clean_for_tmdb(title)
     if not q:
         return None
@@ -3257,13 +3260,21 @@ def _tmdb_poster_bytes(title):
     results = [x for x in data.get("results", []) if x.get("media_type") in ("movie", "tv") and x.get("poster_path")]
     if not results:
         return None
-    best = results[0]
-    if year:
-        for x in results:
-            d = (x.get("release_date") or x.get("first_air_date") or "")[:4]
-            if d == year:
-                best = x
-                break
+    ql = q.lower()
+    def _score(x):
+        names = [str(x.get(k) or "").lower() for k in ("title", "name", "original_title", "original_name")]
+        sim = max((difflib.SequenceMatcher(None, ql, n).ratio() for n in names if n), default=0)
+        if any(n and (n.startswith(ql) or ql.startswith(n)) for n in names):
+            sim = max(sim, 0.8)
+        d = (x.get("release_date") or x.get("first_air_date") or "")[:4]
+        if year and d == year:
+            sim += 0.3
+        if x.get("media_type") == "movie":
+            sim += 0.02
+        return sim + min(float(x.get("popularity") or 0), 100) / 2000.0
+    best = max(results, key=_score)
+    if _score(best) < 0.45:
+        return None
     img_url = "https://image.tmdb.org/t/p/w780" + best["poster_path"]
     with _urlreq.urlopen(_urlreq.Request(img_url, headers={"User-Agent": "Mozilla/5.0"}), timeout=15) as r:
         return r.read()
@@ -3297,6 +3308,147 @@ async def send_with_auto_poster(message, title, path, caption, reply_markup=None
     except Exception as e:
         logging.warning("auto poster failed: %s", e)
         return False
+
+# ---------- উৎসব/দিবসের শুভেচ্ছা (ধর্মনিরপেক্ষ, প্রতি বছর অটোমেটিক) ----------
+_IST = timezone(timedelta(hours=5, minutes=30))
+# (মাস, দিন, ইমোজি, {ভাষা: নাম}, {ভাষা: শুভেচ্ছা})
+FESTIVALS = [
+ (1, 1, "🎆", {"en": "Happy New Year", "bn": "শুভ নববর্ষ", "hi": "नया साल मुबारक"},
+  {"en": "A fresh year, fresh stories! Wishing you joy, health and lots of great movies.", "bn": "নতুন বছর, নতুন গল্প! আনন্দ, সুস্থতা আর প্রচুর ভালো সিনেমায় ভরে উঠুক তোমার বছর।", "hi": "नया साल, नई कहानियाँ! खुशियाँ, सेहत और ढेर सारी बेहतरीन फिल्में मिलें।"}),
+ (1, 26, "🇮🇳", {"en": "Happy Republic Day", "bn": "প্রজাতন্ত্র দিবসের শুভেচ্ছা", "hi": "गणतंत्र दिवस की शुभकामनाएँ"},
+  {"en": "Proud of our Constitution and our country. Jai Hind!", "bn": "আমাদের সংবিধান আর দেশের জন্য গর্ব। জয় হিন্দ!", "hi": "हमारे संविधान और देश पर गर्व है। जय हिन्द!"}),
+ (4, 15, "🌾", {"en": "Happy Poila Boishakh", "bn": "শুভ নববর্ষ — পয়লা বৈশাখ", "hi": "पोइला बैशाख की शुभकामनाएँ"},
+  {"en": "Happy Bengali New Year — joy and togetherness to all!", "bn": "নতুন বছর সবার জীবনে আনন্দ আর সমৃদ্ধি নিয়ে আসুক।", "hi": "बंगाली नववर्ष की ढेरों शुभकामनाएँ!"}),
+ (8, 15, "🇮🇳", {"en": "Happy Independence Day", "bn": "স্বাধীনতা দিবসের শুভেচ্ছা", "hi": "स्वतंत्रता दिवस की शुभकामनाएँ"},
+  {"en": "Freedom is a gift — let's honour it. Jai Hind!", "bn": "স্বাধীনতা এক অমূল্য উপহার — এসো তাকে সম্মান জানাই। জয় হিন্দ!", "hi": "आज़ादी अनमोल है — आइए इसका सम्मान करें। जय हिन्द!"}),
+ (9, 5, "📚", {"en": "Happy Teachers' Day", "bn": "শিক্ষক দিবসের শুভেচ্ছা", "hi": "शिक्षक दिवस की शुभकामनाएँ"},
+  {"en": "Thank you to every teacher who shaped us.", "bn": "যাঁরা আমাদের গড়ে তুলেছেন, সেই শিক্ষকদের প্রতি কৃতজ্ঞতা।", "hi": "हमें गढ़ने वाले हर शिक्षक को धन्यवाद।"}),
+ (10, 2, "🕊️", {"en": "Gandhi Jayanti", "bn": "গান্ধী জয়ন্তী", "hi": "गांधी जयंती"},
+  {"en": "A day to remember peace and non-violence.", "bn": "শান্তি ও অহিংসার কথা স্মরণ করার দিন।", "hi": "शांति और अहिंसा को याद करने का दिन।"}),
+ (11, 14, "🧒", {"en": "Happy Children's Day", "bn": "শিশু দিবসের শুভেচ্ছা", "hi": "बाल दिवस की शुभकामनाएँ"},
+  {"en": "Stay young at heart — enjoy a cartoon today!", "bn": "মনটা শিশুর মতো রাখো — আজ একটা কার্টুন দেখে নাও!", "hi": "दिल से बच्चे बने रहिए — आज एक कार्टून देखिए!"}),
+ (12, 25, "🎄", {"en": "Happy Holidays", "bn": "শুভ ছুটির দিন", "hi": "छुट्टियों की शुभकामनाएँ"},
+  {"en": "Warm wishes for a cosy winter holiday. Enjoy movies with your loved ones!", "bn": "শীতের ছুটিতে আপনজনদের সঙ্গে সিনেমা দেখে দিনটা উপভোগ করো। শুভেচ্ছা রইল!", "hi": "सर्दियों की छुट्टी में अपनों के साथ फिल्में देखिए। ढेरों शुभकामनाएँ!"}),
+ (12, 31, "🥳", {"en": "New Year's Eve", "bn": "বছরের শেষ রাত", "hi": "साल की आखिरी रात"},
+  {"en": "Thank you for being with us this year. See you in the new one!", "bn": "এই বছর আমাদের সঙ্গে থাকার জন্য ধন্যবাদ। নতুন বছরে দেখা হবে!", "hi": "इस साल साथ रहने के लिए धन्यवाद। नए साल में मिलते हैं!"}),
+]
+
+def _festivals():
+    """FESTIVALS + বটের জন্মদিন (/festival birthday DD/MM দিয়ে সেট), তারিখ অনুযায়ী সাজানো।"""
+    out = list(FESTIVALS)
+    b = bot_settings.get("bday")
+    if b:
+        out.append((b[0], b[1], "🎂", {"en": "Our Bot's Birthday!", "bn": "আমাদের বটের জন্মদিন!", "hi": "हमारे बॉट का जन्मदिन!"},
+            {"en": "Today is the birthday of Music & Movies AI Hub. Thank you for being part of the journey!",
+             "bn": "আজ Music & Movies AI Hub-এর জন্মদিন। এই পথচলায় সঙ্গে থাকার জন্য ধন্যবাদ!",
+             "hi": "आज Music & Movies AI Hub का जन्मदिन है। इस सफ़र में साथ रहने के लिए धन्यवाद!"}))
+    return sorted(out, key=lambda x: (x[0], x[1]))
+
+def _festival_text(f, lang):
+    _, _, emo, names, wishes = f
+    lg = lang if lang in names else "en"
+    foot = {"en": "🎬 Movies & music are on us today. Enjoy! 🎶",
+            "bn": "🎬 আজ সিনেমা আর গান উপভোগ করো। 🎶",
+            "hi": "🎬 आज फिल्मों और गानों का मज़ा लीजिए। 🎶"}[lg]
+    return (f"✨━━━━━━━━━━━━━━━✨\n{emo}  <b>{names[lg]}</b>  {emo}\n✨━━━━━━━━━━━━━━━✨\n\n"
+            f"{wishes[lg]}\n\n{foot}\n<i>— Music &amp; Movies AI Hub</i>")
+
+async def festival_greet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """আজ কোনো দিবস হলে প্রতিটি ইউজারকে দিনে একবার শুভেচ্ছা (প্রাইভেট চ্যাটে)।"""
+    try:
+        if not bot_settings.get("festival_on", True):
+            return
+        u = update.effective_user
+        ch = update.effective_chat
+        if not u or not ch or ch.type != "private" or u.is_bot:
+            return
+        now = datetime.now(_IST)
+        f = next((x for x in _festivals() if x[0] == now.month and x[1] == now.day), None)
+        if not f:
+            return
+        today = now.strftime("%Y-%m-%d")
+        g = bot_settings.get("greet") or {}
+        if g.get("d") != today:
+            g = {"d": today, "u": []}
+        if u.id in g["u"]:
+            return
+        g["u"].append(u.id)
+        bot_settings["greet"] = g
+        _save_settings()
+        await context.bot.send_message(ch.id, _festival_text(f, get_lang(u.id)), parse_mode="HTML")
+    except Exception as e:
+        logging.warning("festival greet failed: %s", type(e).__name__)
+
+async def festival_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/festival  -> তালিকা | /festival 3 -> প্রিভিউ | /festival on|off"""
+    if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    arg = (context.args[0].lower() if context.args else "")
+    if arg in ("on", "off"):
+        bot_settings["festival_on"] = (arg == "on")
+        _save_settings()
+        await update.message.reply_text(f"✅ উৎসব-শুভেচ্ছা: {'চালু' if arg == 'on' else 'বন্ধ'}")
+        return
+    if arg == "birthday":
+        try:
+            d, m = (context.args[1].replace("-", "/").split("/"))[:2]
+            d, m = int(d), int(m)
+            datetime(2024, m, d)
+            bot_settings["bday"] = [m, d]
+            _save_settings()
+            await update.message.reply_text(f"✅ বটের জন্মদিন সেট: {d:02d}/{m:02d} — প্রতি বছর এই দিনে শুভেচ্ছা যাবে।")
+        except Exception:
+            await update.message.reply_text("ব্যবহার: /festival birthday 25/08  (দিন/মাস)")
+        return
+    FL = _festivals()
+    if arg.isdigit() and 1 <= int(arg) <= len(FL):
+        f = FL[int(arg) - 1]
+        lang = get_lang(update.effective_user.id)
+        for lg in ("bn", "en", "hi"):
+            await update.message.reply_text(f"[{lg}]\n" + _festival_text(f, lg), parse_mode="HTML")
+        return
+    now = datetime.now(_IST)
+    lines = [f"{i}. {f[0]:02d}/{f[1]:02d} {f[2]} {f[3]['en']}" for i, f in enumerate(_festivals(), 1)]
+    st = "চালু" if bot_settings.get("festival_on", True) else "বন্ধ"
+    await update.message.reply_text(
+        f"🎉 উৎসব-শুভেচ্ছা ({st}) — আজ {now.day:02d}/{now.month:02d}\n\n" + "\n".join(lines) +
+        "\n\nপ্রিভিউ: /festival 5\nবটের জন্মদিন সেট: /festival birthday 25/08\nবন্ধ/চালু: /festival off | on")
+
+async def fixposter_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/fixposter Title  অথবা  /fixposter Title | সঠিক ইংরেজি নাম"""
+    if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    raw = (update.message.text or "").split(" ", 1)
+    if len(raw) < 2 or not raw[1].strip():
+        await update.message.reply_text("ব্যবহার: /fixposter Pushpa 2\nঅথবা: /fixposter Pushpa 2 | Pushpa 2 The Rule")
+        return
+    name, _, alias = raw[1].partition("|")
+    name, alias = name.strip(), alias.strip()
+    keys = list(db.keys()); low = name.lower()
+    hit = next((k for k in keys if k.lower() == low), None) or next((k for k in keys if low in k.lower()), None) \
+        or (difflib.get_close_matches(name, keys, n=1, cutoff=0.6) or [None])[0]
+    if not hit:
+        await update.message.reply_text(f"❌ বটে এই নামে কিছু নেই: {name}")
+        return
+    for k in [k for k in list(auto_posters) if k == hit or k.startswith(hit + "::")]:
+        auto_posters.pop(k, None)
+    if alias:
+        bot_settings.setdefault("poster_alias", {})[hit] = alias
+        _save_settings()
+    try:
+        loop = asyncio.get_running_loop()
+        raw_img = await loop.run_in_executor(None, _tmdb_poster_bytes, hit)
+        if not raw_img:
+            auto_posters[hit] = "none"
+            save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
+            await update.message.reply_text(f"❌ {hit}: ঠিক পোস্টার পাইনি। নাম দিয়ে চেষ্টা করো:\n/fixposter {hit} | ইংরেজি আসল নাম")
+            return
+        marked = await loop.run_in_executor(None, apply_watermark, raw_img)
+        m = await update.message.reply_photo(photo=marked, caption=f"✅ {hit} — নতুন পোস্টার সেভ হয়েছে।\nভুল হলে: /fixposter {hit} | সঠিক নাম")
+        auto_posters[hit] = m.photo[-1].file_id
+        save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
+    except Exception as e:
+        await update.message.reply_text(f"❌ এরর: {str(e)[:150]}")
 
 async def autoposter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -4003,7 +4155,7 @@ _ADMIN_CMDS = {
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
-    "block", "unblock", "resetuser", "setlang", "post", "wa", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
+    "block", "unblock", "resetuser", "setlang", "post", "wa", "fixposter", "festival", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
 }
 _flood, _muted = {}, {}
 
@@ -4574,6 +4726,9 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("treestyle", tree_style_command))
     application.add_handler(CommandHandler("ai", ai_toggle_command))
     application.add_handler(CommandHandler("autoposter", autoposter_command))
+    application.add_handler(CommandHandler("fixposter", fixposter_cmd))
+    application.add_handler(CommandHandler("festival", festival_cmd))
+    application.add_handler(TypeHandler(Update, festival_greet), group=-6)
     application.add_handler(CommandHandler("categoryafter", category_after))
     application.add_handler(CommandHandler("wrapcategory", wrap_category))
     application.add_handler(CommandHandler("buildcategories", build_categories))
