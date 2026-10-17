@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-17-fest4"
+BOT_VERSION = "2026-10-17-fest5"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -3241,10 +3241,12 @@ def _clean_for_tmdb(title):
     q = re.sub(r"\s+", " ", q).strip()
     return q, year
 
-def _tmdb_poster_bytes(title):
+def _tmdb_poster_bytes(title, path=None):
     """TMDB-তে নাম খুঁজে পোস্টারের ছবির bytes ফেরত দেয় (না পেলে None)।"""
     import urllib.parse
     title = (bot_settings.get("poster_alias") or {}).get(title, title)
+    if path:
+        title = title + " " + " ".join(path)   # Part 1 / Part 2 আলাদা পোস্টারের জন্য
     q, year = _clean_for_tmdb(title)
     if not q:
         return None
@@ -3271,6 +3273,19 @@ def _tmdb_poster_bytes(title):
             sim += 0.3
         if x.get("media_type") == "movie":
             sim += 0.02
+        full = " ".join(names)
+        seq = re.search(r"\b([2-9])\b|\b(ii|iii|iv)\b|part\s*(two|three)", full)
+        qnum = re.search(r"\b([2-9])\b", ql)
+        if qnum:
+            if re.search(r"\b" + qnum.group(1) + r"\b", full):
+                sim += 0.25
+            elif seq:
+                sim -= 0.2
+        else:
+            if seq:
+                sim -= 0.3   # নম্বর ছাড়া খুঁজলে (Part 1) সিক্যুয়েলের পোস্টার নয়
+            if d.isdigit():
+                sim -= (int(d) - 1900) / 20000.0   # সমান হলে আগের (প্রথম) ফিল্ম এগিয়ে
         return sim + min(float(x.get("popularity") or 0), 100) / 2000.0
     best = max(results, key=_score)
     if _score(best) < 0.45:
@@ -3295,7 +3310,7 @@ async def send_with_auto_poster(message, title, path, caption, reply_markup=None
             pass
     try:
         loop = asyncio.get_running_loop()
-        raw = await loop.run_in_executor(None, _tmdb_poster_bytes, title)
+        raw = await loop.run_in_executor(None, _tmdb_poster_bytes, title, path)
         if not raw:
             auto_posters[key] = "none"
             save_state("auto_posters", AUTO_POSTERS_FILE, auto_posters)
