@@ -598,7 +598,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-17-fest6"
+BOT_VERSION = "2026-10-18-load1"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -2186,26 +2186,7 @@ async def _wait_animation(bot, chat_id, holder):
         pass
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    holder = {}
-    task = None
-    chat = update.effective_chat
-    if chat is not None:
-        task = asyncio.create_task(_wait_animation(context.bot, chat.id, holder))
-    try:
-        await perform_search(update, context, update.message.text or "")
-    finally:
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except BaseException:
-                pass
-            m = holder.get("msg")
-            if m is not None:
-                try:
-                    await m.delete()
-                except Exception:
-                    pass
+    await perform_search(update, context, update.message.text or "")
 
 async def paginate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -4166,9 +4147,7 @@ async def bulk_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text(f"📦 {len(res) - bad}টা কমান্ড চালানো হয়েছে" + (f" | ❌ {bad}টা হয়নি" if bad else ""))
     chat = update.effective_chat
     if chat:
-        task = typing_tasks.pop(chat.id, None)
-        if task:
-            task.cancel()
+        await _stop_loader(chat.id)
     raise ApplicationHandlerStop
 
 async def run_commands_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4715,37 +4694,153 @@ async def post_init(application: Application):
         BotCommand("support", "contact support for any help"),
     ])
 
-async def show_typing(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """প্রতিটা মেসেজ/কমান্ডের শুরুতে 'টাইপিং...' ইন্ডিকেটর দেখায় — ভাষা-নিরপেক্ষ,
-    কোল্ড-স্টার্ট বা ধীরগতির সময় ইউজারকে বুঝিয়ে রাখে যে কিছু একটা হচ্ছে।"""
-    chat = update.effective_chat
-    if not chat:
-        return
-    old = typing_tasks.pop(chat.id, None)
-    if old:
-        old.cancel()
+# ---------- লোডিং অ্যানিমেশন (৩ডি-ধাঁচের ঘূর্ণায়মান আইকন + লেখা) ----------
+_LOADER_TXT = {
+    "en": {"movie": "Movie loading", "song": "Song loading", "ai": "AI is thinking", "work": "Working on it", "browse": "Opening"},
+    "bn": {"movie": "মুভি লোড হচ্ছে", "song": "গান লোড হচ্ছে", "ai": "AI ভাবছে", "work": "কাজ হচ্ছে", "browse": "খোলা হচ্ছে"},
+    "hi": {"movie": "मूवी लोड हो रही है", "song": "गाना लोड हो रहा है", "ai": "AI सोच रहा है", "work": "काम हो रहा है", "browse": "खुल रहा है"},
+    "ta": {"movie": "திரைப்படம் ஏற்றப்படுகிறது", "song": "பாடல் ஏற்றப்படுகிறது", "ai": "AI யோசிக்கிறது", "work": "செயலாக்கம்", "browse": "திறக்கிறது"},
+    "te": {"movie": "సినిమా లోడ్ అవుతోంది", "song": "పాట లోడ్ అవుతోంది", "ai": "AI ఆలోచిస్తోంది", "work": "పని జరుగుతోంది", "browse": "తెరుస్తోంది"},
+    "mr": {"movie": "चित्रपट लोड होत आहे", "song": "गाणे लोड होत आहे", "ai": "AI विचार करत आहे", "work": "काम सुरू आहे", "browse": "उघडत आहे"},
+    "gu": {"movie": "મૂવી લોડ થઈ રહી છે", "song": "ગીત લોડ થઈ રહ્યું છે", "ai": "AI વિચારી રહ્યું છે", "work": "કામ ચાલુ છે", "browse": "ખુલી રહ્યું છે"},
+}
+_ICON_SETS = {
+    "movie": ["🎬", "🎞️", "📽️", "🍿", "🎥", "🎞️"],
+    "song": ["🎵", "🎶", "🎧", "🎼", "🎤", "🎶"],
+    "ai": ["🧠", "✨", "💫", "🔮", "⭐", "💫"],
+    "work": ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"],
+    "browse": ["📂", "🗂️", "📁", "🗂️"],
+}
+_ORBIT = ["◜", "◠", "◝", "◞", "◡", "◟"]
+_loaders = {}   # chat_id -> _Loader
 
-    async def _loop(chat_id):
-        # টেলিগ্রামের টাইপিং ৫ সেকেন্ডে নিভে যায়, তাই ৪ সেকেন্ড পরপর আবার পাঠাই — সর্বোচ্চ ২ মিনিট
+class _Loader:
+    """একটা অস্থায়ী মেসেজ, যা ঘুরতে থাকা আইকনে নিজেই বদলায়; উত্তর যাওয়ার সঙ্গে সঙ্গে মুছে যায়।"""
+    def __init__(self, bot, chat_id, kind, lang):
+        self.bot, self.chat_id, self.kind = bot, chat_id, kind
+        self.label = (_LOADER_TXT.get(lang) or _LOADER_TXT["en"]).get(kind, "...")
+        self.icons = _ICON_SETS.get(kind, _ICON_SETS["work"])
+        self.msg_id = None
+        self.stopped = False
+        self.ev = asyncio.Event()
+        self.task = asyncio.create_task(self._run())
+
+    def _frame(self, i):
+        icon = self.icons[i % len(self.icons)]
+        orbit = _ORBIT[i % len(_ORBIT)]
+        n = 6
+        pos = i % (2 * n - 2)
+        pos = pos if pos < n else (2 * n - 2 - pos)
+        bar = "".join("▰" if abs(k - pos) <= 1 else "▱" for k in range(n))
+        return f"{orbit}  {icon}  {self.label}{'.' * (i % 4)}\n{bar}"
+
+    async def _sleep(self, sec):
         try:
-            for _ in range(30):
-                try:
-                    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-                except Exception:
-                    pass
-                await asyncio.sleep(4)
-        except asyncio.CancelledError:
+            await asyncio.wait_for(self.ev.wait(), timeout=sec)
+        except asyncio.TimeoutError:
             pass
 
-    typing_tasks[chat.id] = asyncio.create_task(_loop(chat.id))
+    async def _delete(self):
+        if self.msg_id is not None:
+            mid, self.msg_id = self.msg_id, None
+            try:
+                await self.bot.delete_message(self.chat_id, mid)
+            except Exception:
+                pass
+
+    async def _run(self):
+        try:
+            await self._sleep(0.5)          # তাড়াতাড়ি উত্তর এলে অ্যানিমেশন দেখানোই হয় না
+            if self.stopped:
+                return
+            try:
+                await self.bot.send_chat_action(self.chat_id, "typing")
+            except Exception:
+                pass
+            m = await self.bot.send_message(self.chat_id, self._frame(0))
+            self.msg_id = m.message_id
+            if self.stopped:
+                return
+            i = 1
+            t0 = asyncio.get_running_loop().time()
+            while not self.stopped and asyncio.get_running_loop().time() - t0 < 45:
+                await self._sleep(1.0)
+                if self.stopped:
+                    break
+                try:
+                    await self.bot.edit_message_text(self._frame(i), chat_id=self.chat_id, message_id=self.msg_id)
+                except Exception:
+                    pass
+                i += 1
+        except Exception:
+            pass
+        finally:
+            await self._delete()           # স্টপ হোক বা টাইমআউট — মেসেজ সবসময় মুছে যাবে
+
+    async def stop(self):
+        self.stopped = True
+        self.ev.set()
+        try:
+            await asyncio.wait_for(asyncio.shield(self.task), timeout=5)
+        except Exception:
+            pass
+
+def _loader_kind(update):
+    """কী করতে যাচ্ছে তা দেখে: মুভি / গান / AI / ব্রাউজ / সাধারণ।"""
+    try:
+        q = update.callback_query
+        if q is not None:
+            data = q.data or ""
+            if data.startswith("title::"):
+                tt = data.split("::", 1)[1]
+                return "song" if _is_song(tt) else "movie"
+            bs = browse_state.get(q.from_user.id) or {}
+            tt = bs.get("title")
+            if tt and (data.startswith(("nav", "get", "latestopen"))):
+                return "song" if _is_song(tt) else "movie"
+            if data.startswith("catnav"):
+                return "browse"
+            return "work"
+        m = update.message
+        if m is None or not m.text:
+            return None
+        text = m.text.strip()
+        if text.startswith("/"):
+            return "work"
+        low = text.lower()
+        hits = [k for k in db.keys() if low in k.lower()][:30]
+        if hits:
+            return "song" if all(_is_song(k) for k in hits) else "movie"
+        if len(text.split()) >= 3 or "?" in text:
+            return "ai"
+        return "movie"
+    except Exception:
+        return "work"
+
+async def show_typing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """প্রতিটা মেসেজ/বাটন-ট্যাপে লোডিং অ্যানিমেশন শুরু করে (শুধু প্রাইভেট চ্যাটে)।"""
+    chat = update.effective_chat
+    if not chat or chat.type != "private" or update.edited_message is not None:
+        return
+    kind = _loader_kind(update)
+    if kind is None:
+        return
+    old = _loaders.pop(chat.id, None)
+    if old is not None:
+        asyncio.create_task(old.stop())
+    uid = update.effective_user.id if update.effective_user else 0
+    _loaders[chat.id] = _Loader(context.bot, chat.id, kind, get_lang(uid))
+
+async def _stop_loader(chat_id):
+    ld = _loaders.pop(chat_id, None)
+    if ld is not None:
+        await ld.stop()
 
 async def stop_typing(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """হ্যান্ডলার শেষ হলে (বট উত্তর দেওয়ার পর) অ্যানিমেশন থামায়।"""
+    """হ্যান্ডলার শেষ হলে অ্যানিমেশন থামিয়ে মুছে দেয়।"""
     chat = update.effective_chat
     if chat:
-        task = typing_tasks.pop(chat.id, None)
-        if task:
-            task.cancel()
+        await _stop_loader(chat.id)
 
 def build_application() -> Application:
     application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
