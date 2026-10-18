@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import asyncio
+import math
 import difflib
 import re
 import random
@@ -598,7 +599,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-18-load1"
+BOT_VERSION = "2026-10-18-load2"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -2084,6 +2085,10 @@ async def ai_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = "set" if GEMINI_KEY else "MISSING (add GEMINI_API_KEY in Render)"
     await update.message.reply_text(f"AI: {state}\nKey: {key}\n/ai on\n/ai off\n/ai test")
 
+_GREETINGS = {"hi", "hii", "hiii", "hiiii", "hello", "helo", "hlo", "hey", "heyy", "heya", "yo", "hola", "sup", "namaste",
+              "namaskar", "salaam", "salam", "nomoskar", "bye", "thanks", "thankyou", "thx", "ok", "okay", "gm", "gn",
+              "goodmorning", "goodnight", "goodevening", "howareyou", "whatsup", "kemonacho", "kemon", "bolo", "hlw"}
+
 async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_query: str):
     raw_query = raw_query.strip()
     if not raw_query:
@@ -2101,7 +2106,7 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
 
     # --- AI: নামে সরাসরি মিললে সাধারণ সার্চ, না মিললে (বা কথাবার্তা হলে) AI ---
     sq = _squash(raw_query)
-    strong = len(sq) >= 2 and any(sq in _squash(k) for k in db.keys())
+    strong = len(sq) >= 2 and sq not in _GREETINGS and any(sq in _squash(k) for k in db.keys())
     if ai_enabled() and not strong and _ai_rate_ok(uid):
         try:
             res = await ai_answer(uid, raw_query)
@@ -4704,14 +4709,14 @@ _LOADER_TXT = {
     "mr": {"movie": "चित्रपट लोड होत आहे", "song": "गाणे लोड होत आहे", "ai": "AI विचार करत आहे", "work": "काम सुरू आहे", "browse": "उघडत आहे"},
     "gu": {"movie": "મૂવી લોડ થઈ રહી છે", "song": "ગીત લોડ થઈ રહ્યું છે", "ai": "AI વિચારી રહ્યું છે", "work": "કામ ચાલુ છે", "browse": "ખુલી રહ્યું છે"},
 }
-_ICON_SETS = {
-    "movie": ["🎬", "🎞️", "📽️", "🍿", "🎥", "🎞️"],
-    "song": ["🎵", "🎶", "🎧", "🎼", "🎤", "🎶"],
-    "ai": ["🧠", "✨", "💫", "🔮", "⭐", "💫"],
-    "work": ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"],
-    "browse": ["📂", "🗂️", "📁", "🗂️"],
-}
-_ORBIT = ["◜", "◠", "◝", "◞", "◡", "◟"]
+_STYLES = [
+    ["✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳"],                 # ঘূর্ণায়মান তারা
+    ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"],                 # ঘূর্ণায়মান ডট-বল
+    ["◐", "◓", "◑", "◒"],                                      # ঘূর্ণায়মান গোলক
+    ["◢", "◣", "◤", "◥"],                                      # ঘূর্ণায়মান ত্রিভুজ
+    ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],       # ডট-স্পিনার
+]
+_WAVE = "▁▂▃▄▅▆▇█"
 _loaders = {}   # chat_id -> _Loader
 
 class _Loader:
@@ -4719,20 +4724,16 @@ class _Loader:
     def __init__(self, bot, chat_id, kind, lang):
         self.bot, self.chat_id, self.kind = bot, chat_id, kind
         self.label = (_LOADER_TXT.get(lang) or _LOADER_TXT["en"]).get(kind, "...")
-        self.icons = _ICON_SETS.get(kind, _ICON_SETS["work"])
+        self.icons = random.choice(_STYLES)
         self.msg_id = None
         self.stopped = False
         self.ev = asyncio.Event()
         self.task = asyncio.create_task(self._run())
 
     def _frame(self, i):
-        icon = self.icons[i % len(self.icons)]
-        orbit = _ORBIT[i % len(_ORBIT)]
-        n = 6
-        pos = i % (2 * n - 2)
-        pos = pos if pos < n else (2 * n - 2 - pos)
-        bar = "".join("▰" if abs(k - pos) <= 1 else "▱" for k in range(n))
-        return f"{orbit}  {icon}  {self.label}{'.' * (i % 4)}\n{bar}"
+        g = self.icons[i % len(self.icons)]
+        w = "".join(_WAVE[int((math.sin((i + k) * 0.9) + 1) / 2 * 7.99)] for k in range(8))   # ঢেউয়ের মতো গভীরতা
+        return f"{g}  {self.label}{'.' * (i % 4)}\n{w}"
 
     async def _sleep(self, sec):
         try:
@@ -4750,13 +4751,6 @@ class _Loader:
 
     async def _run(self):
         try:
-            await self._sleep(0.5)          # তাড়াতাড়ি উত্তর এলে অ্যানিমেশন দেখানোই হয় না
-            if self.stopped:
-                return
-            try:
-                await self.bot.send_chat_action(self.chat_id, "typing")
-            except Exception:
-                pass
             m = await self.bot.send_message(self.chat_id, self._frame(0))
             self.msg_id = m.message_id
             if self.stopped:
@@ -4764,7 +4758,7 @@ class _Loader:
             i = 1
             t0 = asyncio.get_running_loop().time()
             while not self.stopped and asyncio.get_running_loop().time() - t0 < 45:
-                await self._sleep(1.0)
+                await self._sleep(0.7)
                 if self.stopped:
                     break
                 try:
@@ -4807,11 +4801,12 @@ def _loader_kind(update):
         text = m.text.strip()
         if text.startswith("/"):
             return "work"
-        low = text.lower()
-        hits = [k for k in db.keys() if low in k.lower()][:30]
-        if hits:
-            return "song" if all(_is_song(k) for k in hits) else "movie"
-        if len(text.split()) >= 3 or "?" in text:
+        sq = _squash(text)
+        if len(sq) >= 2 and sq not in _GREETINGS:
+            hits = [k for k in db.keys() if sq in _squash(k)][:30]
+            if hits:
+                return "song" if all(_is_song(k) for k in hits) else "movie"
+        if ai_enabled():
             return "ai"
         return "movie"
     except Exception:
