@@ -599,7 +599,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-18-load2"
+BOT_VERSION = "2026-10-26-cast"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -2089,6 +2089,124 @@ _GREETINGS = {"hi", "hii", "hiii", "hiiii", "hello", "helo", "hlo", "hey", "heyy
               "namaskar", "salaam", "salam", "nomoskar", "bye", "thanks", "thankyou", "thx", "ok", "okay", "gm", "gn",
               "goodmorning", "goodnight", "goodevening", "howareyou", "whatsup", "kemonacho", "kemon", "bolo", "hlw"}
 
+# ===== হিরো / ডিরেক্টর / অভিনেতার নাম দিয়ে সার্চ =====
+# "নামের অন্য বানান, ..." : "বটের টাইটেলের অংশ, ..."   (টাইটেল অংশ যেকোনো ছোট-বড় হাতের হতে পারে)
+PEOPLE = {
+    "shah rukh khan,shahrukh khan,sharukh khan,srk,king khan": "ra.one,pathaan,jawan",
+    "prabhas": "salaar,kalki,baahubali",
+    "ss rajamouli,rajamouli,s s rajamouli": "rrr,baahubali",
+    "ram charan,ramcharan": "rrr,peddi",
+    "jr ntr,ntr,junior ntr": "rrr,war 2",
+    "allu arjun,bunny,alluarjun": "pushpa",
+    "sukumar": "pushpa",
+    "yash,rocking star yash": "kgf,toxic",
+    "prashanth neel": "kgf,salaar",
+    "rishab shetty,rishabh shetty": "kantara",
+    "thalapathy vijay,vijay,thalapathy,joseph vijay,দালাপতি,থালাপতি": "leo",
+    "lokesh kanagaraj": "leo",
+    "unni mukundan": "marco",
+    "nikhil siddhartha,nikhil": "karthikeya",
+    "hrithik roshan,hrithik,ঋত্বিক রোশন": "war 2,dhoom 2,krrish",
+    "ranveer singh": "dhurandhar",
+    "akshay khanna,sanjay dutt,r madhavan,madhavan,arjun rampal": "dhurandhar",
+    "aditya dhar": "dhurandhar",
+    "ranbir kapoor": "brahmastra,animal",
+    "anil kapoor,bobby deol,sandeep reddy vanga": "animal",
+    "alia bhatt": "brahmastra,alpha",
+    "aamir khan,amir khan": "pk,dhoom 3",
+    "rajkumar hirani": "pk",
+    "abhishek bachchan,uday chopra": "dhoom",
+    "john abraham": "pathaan,dhoom",
+    "tiger shroff": "baaghi,a flying jatt",
+    "ahaan panday,aneet padda,mohit suri": "saiyaara",
+    "ajay devgn,ajay devgan": "drishyam,shaitaan",
+    "tabu": "drishyam",
+    "shraddha kapoor": "stree,baaghi",
+    "rajkummar rao,rajkumar rao": "stree",
+    "varun dhawan,kriti sanon": "bhediya",
+    "vikrant massey": "12th fail",
+    "sohum shah": "tumbbad",
+    "pankaj tripathi,ali fazal": "mirzapur",
+    "ayushmann khurrana,rashmika mandanna,rashmika": "thamma",
+    "pradeep ranganathan": "dude",
+    "ryan reynolds": "deadpool",
+    "hugh jackman": "deadpool,wolverine",
+    "robert downey jr,rdj,tony stark": "iron man",
+    "chris hemsworth": "thor",
+    "tom holland": "spider",
+    "chris evans": "captain america",
+    "scarlett johansson": "black widow",
+    "tom cruise,ethan hunt": "mission",
+    "keanu reeves": "john wick",
+    "henry cavill,zack snyder": "man of steel,batman v superman,justice league",
+    "ben affleck": "batman v superman",
+    "robert pattinson": "the batman",
+    "christian bale,christopher nolan": "batman begins",
+    "margot robbie,harley quinn": "suicide squad,birds of prey",
+    "james gunn,chris pratt": "guardians,suicide squad",
+    "joaquin phoenix": "joker",
+    "jason momoa": "aquaman",
+    "gal gadot": "wonder woman",
+    "dwayne johnson,the rock": "black adam",
+    "zachary levi": "shazam",
+    "ezra miller": "the flash",
+    "elijah wood,peter jackson": "lord of the rings",
+    "andrew garfield": "amazing spider",
+    "tom hardy": "venom",
+    "nicolas cage": "ghost rider",
+    "benedict cumberbatch": "doctor strange,dr strange",
+    "charlie cox": "daredevil",
+    "jenna ortega,tim burton": "wednesday",
+    "millie bobby brown": "stranger things",
+    "alan ritchson": "reacher",
+}
+
+def _people_map():
+    m = dict(PEOPLE)
+    for k, v in (bot_settings.get("people") or {}).items():
+        m[k] = (m.get(k, "") + "," + v) if k in m else v
+    return m
+
+def people_search(query: str):
+    q_words = [_squash(w) for w in re.split(r"\s+", query.strip()) if _squash(w)]
+    if not q_words:
+        return None
+    grams = set(q_words)
+    for n in (2, 3):
+        for i in range(len(q_words) - n + 1):
+            grams.add("".join(q_words[i:i + n]))
+    whole = "".join(q_words)
+    kws = []
+    for names, titles in _people_map().items():
+        for nm in names.split(","):
+            s = _squash(nm)
+            if s and (s in grams or (len(s) >= 6 and s in whole)):
+                kws += [_squash(x) for x in titles.split(",") if _squash(x)]
+                break
+    if not kws:
+        return None
+    res = [k for k in db.keys() if any(kw in _squash(k) for kw in kws)]
+    return res or None
+
+async def cast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/cast হিরোর নাম | টাইটেল অংশ | টাইটেল অংশ   (যেমন: /cast Thalapathy Vijay | Leo | Bigil)"""
+    if update.effective_user.id != ADMIN_ID or update.effective_chat.type != "private":
+        return
+    parts = (update.message.text or "").split(None, 1)
+    if len(parts) < 2:
+        await update.message.reply_text("লেখো: /cast হিরোর নাম | মুভির নাম | মুভির নাম")
+        return
+    seg = [x.strip() for x in parts[1].split("|") if x.strip()]
+    if len(seg) < 2:
+        await update.message.reply_text("নামের পর | দিয়ে অন্তত একটা মুভির নাম দাও")
+        return
+    ppl = bot_settings.setdefault("people", {})
+    name = seg[0].lower()
+    old = ppl.get(name, "")
+    ppl[name] = ",".join(x for x in ([old] if old else []) + seg[1:])
+    _save_settings()
+    await update.message.reply_text(f"✅ {seg[0]} → {', '.join(seg[1:])}")
+
 async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_query: str):
     raw_query = raw_query.strip()
     if not raw_query:
@@ -2103,6 +2221,17 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     hist.append({"q": raw_query, "t": datetime.now(timezone.utc).isoformat()})
     del hist[:-HISTORY_LIMIT]
     save_state("search_history", SEARCH_HISTORY_FILE, user_search_history)
+
+    # --- হিরো/ডিরেক্টরের নাম দিয়ে সার্চ ---
+    try:
+        _pt = people_search(raw_query)
+    except Exception as e:
+        logging.warning("people_search failed: %s", e)
+        _pt = None
+    if _pt:
+        last_search_results[uid] = _pt
+        await update.message.reply_text(f"🎬 \"{raw_query}\" এর মুভিগুলো:", reply_markup=build_results_keyboard(_pt, 0))
+        return
 
     # --- AI: নামে সরাসরি মিললে সাধারণ সার্চ, না মিললে (বা কথাবার্তা হলে) AI ---
     sq = _squash(raw_query)
@@ -4192,7 +4321,7 @@ _ADMIN_CMDS = {
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
-    "block", "unblock", "resetuser", "setlang", "post", "wa", "fixposter", "festival", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
+    "block", "unblock", "resetuser", "setlang", "post", "wa", "cast", "fixposter", "festival", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
 }
 _flood, _muted = {}, {}
 
@@ -4916,6 +5045,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("ownerphoto", owner_photo_arm))
     application.add_handler(CommandHandler("post", post_to_channel))
     application.add_handler(CommandHandler("wa", wa_cmd))
+    application.add_handler(CommandHandler("cast", cast_cmd))
     application.add_handler(CommandHandler("postall", post_all))
     application.add_handler(CommandHandler("stoppost", stop_post))
     application.add_handler(CommandHandler("repostall", repost_all))
