@@ -201,7 +201,26 @@ LANGUAGES = {
     "te": "తెలుగు",
     "mr": "मराठी",
     "gu": "ગુજરાતી",
+    "ne": "नेपाली",
+    "zh": "中文",
+    "ja": "日本語",
+    "dz": "རྫོང་ཁ",
+    "ur": "اردو",
+    "kn": "ಕನ್ನಡ",
+    "ml": "മലയാളം",
+    "pa": "ਪੰਜਾਬੀ",
 }
+
+def _lang_buttons():
+    """১৫টা ভাষার বাটন — প্রতি সারিতে ২টা"""
+    row, rows = [], []
+    for code, name in LANGUAGES.items():
+        row.append(InlineKeyboardButton(name, callback_data=f"lang::{code}"))
+        if len(row) == 2:
+            rows.append(row); row = []
+    if row:
+        rows.append(row)
+    return rows
 
 TEXTS = {
     "en": {
@@ -519,6 +538,182 @@ TEXTS = {
         "admin_loading_removed": "લોડિંગ એનિમેશન દૂર કરવામાં આવ્યું ✅",
         "request_fulfilled": "તમે વિનંતી કરેલું ટાઈટલ હવે ઉપલબ્ધ છે:",
     },
+    "ne": {
+        "choose_language": 'आफ्नो भाषा छान्नुहोस्:',
+        "language_set": 'भाषा नेपाली सेट गरियो।',
+        "search_prompt": '🎬 नाम लेखेर कुनै पनि चलचित्र, गीत वा गेम आफैं खोज्नुहोस्।\n🤖 वा हाम्रो AI सँग कुरा गर्नुहोस्, उसले खोजिदिन्छ 😊',
+        "results": 'नतिजा:',
+        "not_found": 'केही भेटिएन।',
+        "not_found_request": '😕 माफ गर्नुहोस्, यो अहिले उपलब्ध छैन।\n🙏 चिन्ता नगर्नुहोस् — केही दिनमा अपलोड हुनेछ, तयार हुनासाथ यहीँ सूचना पाउनुहुनेछ! 🎬',
+        "select_quality": 'गुणस्तर छान्नुहोस्:',
+        "content_unavailable": 'यो सामग्री अब उपलब्ध छैन।',
+        "link_not_found": 'लिङ्क भेटिएन।',
+        "download_link": 'डाउनलोड लिङ्क:',
+        "request_button": 'यो शीर्षक अनुरोध गर्नुहोस्',
+        "request_sent": 'तपाईंको अनुरोध एडमिनलाई पठाइयो।',
+        "thank_you": 'बोट प्रयोग गरेकोमा धन्यवाद! आनन्द लिनुहोस्।',
+        "select_option": 'छान्नुहोस्:',
+        "back_button": '◀️ पछाडि',
+        "request_fulfilled": 'तपाईंले अनुरोध गर्नुभएको शीर्षक अब उपलब्ध छ:',
+        "title_label": 'शीर्षक:',
+        "season_label": 'सिजन:',
+        "episode_label": 'एपिसोड:',
+        "quality_label": 'गुणस्तर:',
+    },
+    "zh": {
+        "choose_language": '选择您的语言：',
+        "language_set": '语言已设置为中文。',
+        "search_prompt": '🎬 输入名称即可自行搜索任何电影、歌曲或游戏。\n🤖 或与我们的 AI 聊天，它会帮您找到 😊',
+        "results": '结果：',
+        "not_found": '未找到。',
+        "not_found_request": '😕 抱歉，这个目前还没有。\n🙏 别担心——几天内就会上传，准备好后我们会立即在这里通知您！🎬',
+        "select_quality": '选择画质：',
+        "content_unavailable": '该内容已不可用。',
+        "link_not_found": '未找到链接。',
+        "download_link": '下载链接：',
+        "request_button": '申请此片名',
+        "request_sent": '您的申请已发送给管理员。',
+        "thank_you": '感谢使用本机器人！祝您使用愉快。',
+        "select_option": '请选择：',
+        "back_button": '◀️ 返回',
+        "request_fulfilled": '您申请的片名现已上线：',
+        "title_label": '片名：',
+        "season_label": '季：',
+        "episode_label": '集：',
+        "quality_label": '画质：',
+    },
+    "ja": {
+        "choose_language": '言語を選択してください：',
+        "language_set": '言語を日本語に設定しました。',
+        "search_prompt": '🎬 名前を入力して、映画・曲・ゲームを自分で検索できます。\n🤖 または AI に話しかけて探してもらいましょう 😊',
+        "results": '結果：',
+        "not_found": '見つかりませんでした。',
+        "not_found_request": '😕 申し訳ありません、まだ用意されていません。\n🙏 ご心配なく — 数日以内にアップロードされ、準備ができ次第ここでお知らせします！🎬',
+        "select_quality": '画質を選択：',
+        "content_unavailable": 'このコンテンツは利用できなくなりました。',
+        "link_not_found": 'リンクが見つかりません。',
+        "download_link": 'ダウンロードリンク：',
+        "request_button": 'このタイトルをリクエスト',
+        "request_sent": 'リクエストを管理者に送信しました。',
+        "thank_you": 'ご利用ありがとうございます！お楽しみください。',
+        "select_option": '選択してください：',
+        "back_button": '◀️ 戻る',
+        "request_fulfilled": 'リクエストされたタイトルが利用可能になりました：',
+        "title_label": 'タイトル：',
+        "season_label": 'シーズン：',
+        "episode_label": 'エピソード：',
+        "quality_label": '画質：',
+    },
+    "dz": {
+        "choose_language": 'རང་གི་སྐད་ཡིག་འདེམ་རོགས།',
+        "language_set": 'སྐད་ཡིག་རྫོང་ཁར་བསྒྱུར་ཡི།',
+        "search_prompt": '🎬 མིང་བྲིས་ཏེ་གློག་བརྙན་ དང་ གླུ་ ཡང་ན་ རྩེད་མོ་གང་རུང་རང་ཉིད་ཀྱིས་འཚོལ་ཨེ་ཚུགས།\n🤖 ཡང་ན་ ངེའི་ AI དང་ཁ་བརྡ་འབད། ཁོང་གིས་འཚོལ་བྱིན་འོང་། 😊',
+        "results": 'གྲུབ་འབྲས།',
+        "not_found": 'ག་ནི་ཡང་མ་ཐོབ།',
+        "not_found_request": '😕 དགོངས་པ་ཞུ། འདི་ད་ལྟོ་མེདཔ་ཨིན།\n🙏 སེམས་ཁྲལ་མ་འབད། ཉིནམ་ཁག་ཅིག་གི་ནང་ཐོ་བཀོད་འབད་འོང་། འགྲིག་པའི་སྐབས་ ཁྱེད་ལུ་འདི་ནང་བརྡ་སྟོན་འབད་འོང་། 🎬',
+        "select_quality": 'གུཎ་ཚད་འདེམ་རོགས།',
+        "content_unavailable": 'ནང་དོན་འདི་ད་ལས་བཟུམ་མེད།',
+        "link_not_found": 'སྦྲེལ་ཐག་མ་ཐོབ།',
+        "download_link": 'ཕབ་ལེན་སྦྲེལ་ཐག།',
+        "request_button": 'མིང་འདི་ཞུ་འབད།',
+        "request_sent": 'ཁྱོད་ཀྱི་ཞུ་བ་འདི་ཨེཌ་མིན་ལུ་བཏང་ཡི།',
+        "thank_you": 'བོཊ་ལག་ལེན་འཐབ་པར་བཀའ་དྲིན་ཆེ། དགའ་སྤྲོ་འབད།',
+        "select_option": 'འདེམ་རོགས།',
+        "back_button": '◀️ རྒྱབ།',
+        "request_fulfilled": 'ཁྱོད་ཀྱིས་ཞུ་བའི་མིང་འདི་ད་ལྟོ་འཐོབ་ཚུགས།',
+        "title_label": 'མིང་།',
+        "season_label": 'སི་ཛིན།',
+        "episode_label": 'ཨེ་པི་སོཌ།',
+        "quality_label": 'གུཎ་ཚད།',
+    },
+    "ur": {
+        "choose_language": 'اپنی زبان منتخب کریں:',
+        "language_set": 'زبان اردو پر سیٹ کر دی گئی ہے۔',
+        "search_prompt": '🎬 نام لکھ کر خود کوئی بھی فلم، گانا یا گیم تلاش کریں۔\n🤖 یا ہمارے AI سے بات کریں، وہ آپ کے لیے ڈھونڈ دے گا 😊',
+        "results": 'نتائج:',
+        "not_found": 'کچھ نہیں ملا۔',
+        "not_found_request": '😕 معذرت، یہ ابھی دستیاب نہیں ہے۔\n🙏 فکر نہ کریں — چند دنوں میں اپ لوڈ ہو جائے گا اور تیار ہوتے ہی آپ کو یہیں اطلاع ملے گی! 🎬',
+        "select_quality": 'کوالٹی منتخب کریں:',
+        "content_unavailable": 'یہ مواد اب دستیاب نہیں ہے۔',
+        "link_not_found": 'لنک نہیں ملا۔',
+        "download_link": 'ڈاؤن لوڈ لنک:',
+        "request_button": 'یہ ٹائٹل ریکوئسٹ کریں',
+        "request_sent": 'آپ کی درخواست ایڈمن کو بھیج دی گئی ہے۔',
+        "thank_you": 'بوٹ استعمال کرنے کا شکریہ! لطف اٹھائیں۔',
+        "select_option": 'منتخب کریں:',
+        "back_button": '◀️ واپس',
+        "request_fulfilled": 'آپ نے جو ٹائٹل مانگا تھا وہ اب دستیاب ہے:',
+        "title_label": 'ٹائٹل:',
+        "season_label": 'سیزن:',
+        "episode_label": 'ایپی سوڈ:',
+        "quality_label": 'کوالٹی:',
+    },
+    "kn": {
+        "choose_language": 'ನಿಮ್ಮ ಭಾಷೆಯನ್ನು ಆರಿಸಿ:',
+        "language_set": 'ಭಾಷೆಯನ್ನು ಕನ್ನಡಕ್ಕೆ ಹೊಂದಿಸಲಾಗಿದೆ.',
+        "search_prompt": '🎬 ಹೆಸರು ಟೈಪ್ ಮಾಡಿ ಯಾವುದೇ ಸಿನಿಮಾ, ಹಾಡು ಅಥವಾ ಗೇಮ್ ನೀವೇ ಹುಡುಕಿ.\n🤖 ಅಥವಾ ನಮ್ಮ AI ಜೊತೆ ಮಾತನಾಡಿ, ಅದು ಹುಡುಕಿ ಕೊಡುತ್ತದೆ 😊',
+        "results": 'ಫಲಿತಾಂಶಗಳು:',
+        "not_found": 'ಏನೂ ಸಿಗಲಿಲ್ಲ.',
+        "not_found_request": '😕 ಕ್ಷಮಿಸಿ, ಇದು ಇನ್ನೂ ಲಭ್ಯವಿಲ್ಲ.\n🙏 ಚಿಂತಿಸಬೇಡಿ — ಕೆಲವೇ ದಿನಗಳಲ್ಲಿ ಅಪ್\u200cಲೋಡ್ ಆಗುತ್ತದೆ, ಸಿದ್ಧವಾದ ತಕ್ಷಣ ಇಲ್ಲೇ ತಿಳಿಸುತ್ತೇವೆ! 🎬',
+        "select_quality": 'ಗುಣಮಟ್ಟ ಆರಿಸಿ:',
+        "content_unavailable": 'ಈ ವಿಷಯ ಇನ್ನು ಲಭ್ಯವಿಲ್ಲ.',
+        "link_not_found": 'ಲಿಂಕ್ ಸಿಗಲಿಲ್ಲ.',
+        "download_link": 'ಡೌನ್\u200cಲೋಡ್ ಲಿಂಕ್:',
+        "request_button": 'ಈ ಶೀರ್ಷಿಕೆಯನ್ನು ವಿನಂತಿಸಿ',
+        "request_sent": 'ನಿಮ್ಮ ವಿನಂತಿಯನ್ನು ಅಡ್ಮಿನ್\u200cಗೆ ಕಳುಹಿಸಲಾಗಿದೆ.',
+        "thank_you": 'ಬಾಟ್ ಬಳಸಿದ್ದಕ್ಕೆ ಧನ್ಯವಾದ! ಆನಂದಿಸಿ.',
+        "select_option": 'ಆರಿಸಿ:',
+        "back_button": '◀️ ಹಿಂದೆ',
+        "request_fulfilled": 'ನೀವು ವಿನಂತಿಸಿದ ಶೀರ್ಷಿಕೆ ಈಗ ಲಭ್ಯವಿದೆ:',
+        "title_label": 'ಶೀರ್ಷಿಕೆ:',
+        "season_label": 'ಸೀಸನ್:',
+        "episode_label": 'ಎಪಿಸೋಡ್:',
+        "quality_label": 'ಗುಣಮಟ್ಟ:',
+    },
+    "ml": {
+        "choose_language": 'നിങ്ങളുടെ ഭാഷ തിരഞ്ഞെടുക്കുക:',
+        "language_set": 'ഭാഷ മലയാളത്തിലേക്ക് സജ്ജമാക്കി.',
+        "search_prompt": '🎬 പേര് ടൈപ്പ് ചെയ്ത് ഏത് സിനിമയും പാട്ടും ഗെയിമും സ്വയം തിരയാം.\n🤖 അല്ലെങ്കിൽ ഞങ്ങളുടെ AI-യോട് സംസാരിക്കൂ, അത് കണ്ടെത്തിത്തരും 😊',
+        "results": 'ഫലങ്ങൾ:',
+        "not_found": 'ഒന്നും കണ്ടെത്തിയില്ല.',
+        "not_found_request": '😕 ക്ഷമിക്കണം, ഇത് ഇതുവരെ ലഭ്യമല്ല.\n🙏 വിഷമിക്കേണ്ട — കുറച്ച് ദിവസത്തിനുള്ളിൽ അപ്\u200cലോഡ് ചെയ്യും, തയ്യാറായാലുടൻ ഇവിടെ അറിയിക്കും! 🎬',
+        "select_quality": 'ക്വാളിറ്റി തിരഞ്ഞെടുക്കുക:',
+        "content_unavailable": 'ഈ ഉള്ളടക്കം ഇനി ലഭ്യമല്ല.',
+        "link_not_found": 'ലിങ്ക് കണ്ടെത്തിയില്ല.',
+        "download_link": 'ഡൗൺലോഡ് ലിങ്ക്:',
+        "request_button": 'ഈ ടൈറ്റിൽ അഭ്യർത്ഥിക്കുക',
+        "request_sent": 'നിങ്ങളുടെ അഭ്യർത്ഥന അഡ്മിന് അയച്ചു.',
+        "thank_you": 'ബോട്ട് ഉപയോഗിച്ചതിന് നന്ദി! ആസ്വദിക്കൂ.',
+        "select_option": 'തിരഞ്ഞെടുക്കുക:',
+        "back_button": '◀️ തിരികെ',
+        "request_fulfilled": 'നിങ്ങൾ അഭ്യർത്ഥിച്ച ടൈറ്റിൽ ഇപ്പോൾ ലഭ്യമാണ്:',
+        "title_label": 'ടൈറ്റിൽ:',
+        "season_label": 'സീസൺ:',
+        "episode_label": 'എപ്പിസോഡ്:',
+        "quality_label": 'ക്വാളിറ്റി:',
+    },
+    "pa": {
+        "choose_language": 'ਆਪਣੀ ਭਾਸ਼ਾ ਚੁਣੋ:',
+        "language_set": 'ਭਾਸ਼ਾ ਪੰਜਾਬੀ ਸੈੱਟ ਕਰ ਦਿੱਤੀ ਗਈ ਹੈ।',
+        "search_prompt": '🎬 ਨਾਮ ਲਿਖ ਕੇ ਕੋਈ ਵੀ ਫ਼ਿਲਮ, ਗੀਤ ਜਾਂ ਗੇਮ ਆਪ ਲੱਭੋ।\n🤖 ਜਾਂ ਸਾਡੇ AI ਨਾਲ ਗੱਲ ਕਰੋ, ਉਹ ਲੱਭ ਦੇਵੇਗਾ 😊',
+        "results": 'ਨਤੀਜੇ:',
+        "not_found": 'ਕੁਝ ਨਹੀਂ ਮਿਲਿਆ।',
+        "not_found_request": '😕 ਮਾਫ਼ ਕਰਨਾ, ਇਹ ਹਾਲੇ ਉਪਲਬਧ ਨਹੀਂ ਹੈ।\n🙏 ਫ਼ਿਕਰ ਨਾ ਕਰੋ — ਕੁਝ ਦਿਨਾਂ ਵਿੱਚ ਅੱਪਲੋਡ ਹੋ ਜਾਵੇਗੀ ਅਤੇ ਤਿਆਰ ਹੁੰਦੇ ਹੀ ਇੱਥੇ ਦੱਸਾਂਗੇ! 🎬',
+        "select_quality": 'ਕੁਆਲਿਟੀ ਚੁਣੋ:',
+        "content_unavailable": 'ਇਹ ਸਮੱਗਰੀ ਹੁਣ ਉਪਲਬਧ ਨਹੀਂ ਹੈ।',
+        "link_not_found": 'ਲਿੰਕ ਨਹੀਂ ਮਿਲਿਆ।',
+        "download_link": 'ਡਾਊਨਲੋਡ ਲਿੰਕ:',
+        "request_button": 'ਇਹ ਟਾਈਟਲ ਮੰਗੋ',
+        "request_sent": 'ਤੁਹਾਡੀ ਬੇਨਤੀ ਐਡਮਿਨ ਨੂੰ ਭੇਜ ਦਿੱਤੀ ਗਈ ਹੈ।',
+        "thank_you": 'ਬੋਟ ਵਰਤਣ ਲਈ ਧੰਨਵਾਦ! ਆਨੰਦ ਮਾਣੋ।',
+        "select_option": 'ਚੁਣੋ:',
+        "back_button": '◀️ ਪਿੱਛੇ',
+        "request_fulfilled": 'ਤੁਹਾਡੇ ਵੱਲੋਂ ਮੰਗਿਆ ਟਾਈਟਲ ਹੁਣ ਉਪਲਬਧ ਹੈ:',
+        "title_label": 'ਟਾਈਟਲ:',
+        "season_label": 'ਸੀਜ਼ਨ:',
+        "episode_label": 'ਐਪੀਸੋਡ:',
+        "quality_label": 'ਕੁਆਲਿਟੀ:',
+    },
 }
 
 def get_lang(user_id: int) -> str:
@@ -599,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-26-cast"
+BOT_VERSION = "2026-10-28-lang15-game"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -699,10 +894,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await open_title_flow(_SendShim(context.bot, update.effective_chat.id), uid, title)
                 return
             _pending_dl[uid] = title
-    buttons = [
-        [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
-        for code, name in LANGUAGES.items()
-    ]
+    buttons = _lang_buttons()
     await update.message.reply_text(
         "🌐 Select your language:",
         reply_markup=InlineKeyboardMarkup(buttons)
@@ -711,20 +903,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def begin_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    buttons = [
-        [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
-        for code, name in LANGUAGES.items()
-    ]
+    buttons = _lang_buttons()
     await query.edit_message_text(
         "Select your language:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
 async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    buttons = [
-        [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
-        for code, name in LANGUAGES.items()
-    ]
+    buttons = _lang_buttons()
     await update.message.reply_text(
         "Select your language:",
         reply_markup=InlineKeyboardMarkup(buttons)
@@ -865,10 +1051,7 @@ async def reset_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.delete_messages(chat_id=chat_id, message_ids=ids[i:i + 100])
             except Exception:
                 pass
-        buttons = [
-            [InlineKeyboardButton(name, callback_data=f"lang::{code}")]
-            for code, name in LANGUAGES.items()
-        ]
+        buttons = _lang_buttons()
         await context.bot.send_message(chat_id=chat_id, text="Select your language:", reply_markup=InlineKeyboardMarkup(buttons))
     else:
         await query.edit_message_text("Cancelled.")
@@ -911,6 +1094,27 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"{t(uid, status_key)}\n{t(uid, 'title_label')} {existing_title}\n{t(uid, 'quality_label')} {quality}"
     )
+
+async def addgame_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/addgame Title | Label | Size | Link   (যেমন: /addgame My Game | PC | 4 GB | লিংক)"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    uid = update.effective_user.id
+    parts = (update.message.text or "").split(" ", 1)
+    seg = [x.strip() for x in parts[1].split("|")] if len(parts) > 1 else []
+    if len(seg) != 4 or not all(seg):
+        await update.message.reply_text(f"{t(uid, 'admin_format_error')}\n/addgame Title | Label | Size | Link\nExample: /addgame My Game | PC | 4 GB | https://drive.google.com/file/d/xxx/view")
+        return
+    title, label, size, link = seg
+    ex = find_existing_title(title)
+    db.setdefault(ex, {})[label] = link
+    save_state("content", DB_FILE, db)
+    bot_settings.setdefault("games", {}).setdefault(ex, {})[label] = size
+    _save_settings()
+    title_meta.setdefault(ex, {})["added_at"] = datetime.now(timezone.utc).isoformat()
+    save_state("meta", META_FILE, title_meta)
+    await notify_fulfilled_requests(context, ex)
+    await update.message.reply_text(f"{t(uid, 'admin_added')}\n🎮 {ex}\n{label} — {size}")
 
 async def add_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1491,7 +1695,7 @@ async def apply_user_action(bot, u, action, lang=None):
     if action == "reset":
         reset_user_data(u)
         try:
-            buttons = [[InlineKeyboardButton(n, callback_data=f"lang::{c}")] for c, n in LANGUAGES.items()]
+            buttons = _lang_buttons()
             await bot.send_message(u, "🌐 Select your language:", reply_markup=InlineKeyboardMarkup(buttons))
         except Exception:
             pass
@@ -2596,7 +2800,15 @@ def category_emoji_text(path, kinds_names):
         lines.append(f"… +{len(kinds_names) - 15}")
     return "\n".join(lines)
 
-TREE_STYLES = ["text", "tree", "neon", "cards", "emoji"]
+TREE_LOADER_TXT["ne"] = {"movie": 'चलचित्र लोड हुँदैछ', "song": 'गीत लोड हुँदैछ', "ai": 'AI सोच्दैछ', "work": 'काम हुँदैछ', "browse": 'खोल्दैछ'}
+_LOADER_TXT["zh"] = {"movie": '电影加载中', "song": '歌曲加载中', "ai": 'AI 思考中', "work": '处理中', "browse": '正在打开'}
+_LOADER_TXT["ja"] = {"movie": '映画を読み込み中', "song": '曲を読み込み中', "ai": 'AI が考え中', "work": '処理中', "browse": '開いています'}
+_LOADER_TXT["dz"] = {"movie": 'གློག་བརྙན་ལོཌི་འབད་དེ་ཡོད།', "song": 'གླུ་ལོཌི་འབད་དེ་ཡོད།', "ai": 'AI གིས་བསམ་བཞིན་ཡོད།', "work": 'ལཱ་འབད་དེ་ཡོད།', "browse": 'ཁ་ཕྱེ་དེ་ཡོད།'}
+_LOADER_TXT["ur"] = {"movie": 'فلم لوڈ ہو رہی ہے', "song": 'گانا لوڈ ہو رہا ہے', "ai": 'AI سوچ رہا ہے', "work": 'کام جاری ہے', "browse": 'کھل رہا ہے'}
+_LOADER_TXT["kn"] = {"movie": 'ಸಿನಿಮಾ ಲೋಡ್ ಆಗುತ್ತಿದೆ', "song": 'ಹಾಡು ಲೋಡ್ ಆಗುತ್ತಿದೆ', "ai": 'AI ಯೋಚಿಸುತ್ತಿದೆ', "work": 'ಕೆಲಸ ನಡೆಯುತ್ತಿದೆ', "browse": 'ತೆರೆಯಲಾಗುತ್ತಿದೆ'}
+_LOADER_TXT["ml"] = {"movie": 'സിനിമ ലോഡ് ചെയ്യുന്നു', "song": 'പാട്ട് ലോഡ് ചെയ്യുന്നു', "ai": 'AI ചിന്തിക്കുന്നു', "work": 'പ്രവർത്തിക്കുന്നു', "browse": 'തുറക്കുന്നു'}
+_LOADER_TXT["pa"] = {"movie": 'ਫ਼ਿਲਮ ਲੋਡ ਹੋ ਰਹੀ ਹੈ', "song": 'ਗੀਤ ਲੋਡ ਹੋ ਰਿਹਾ ਹੈ', "ai": 'AI ਸੋਚ ਰਿਹਾ ਹੈ', "work": 'ਕੰਮ ਹੋ ਰਿਹਾ ਹੈ', "browse": 'ਖੁੱਲ੍ਹ ਰਿਹਾ ਹੈ'}
+_STYLES = ["text", "tree", "neon", "cards", "emoji"]
 
 def pick_style():
     m = bot_settings.get("tree_mode", "auto")
@@ -3254,27 +3466,52 @@ _CARD_TXT = {
     "mr": ("▶️ पहा", "⬇️ डाउनलोड", "📤 शेअर", "🙋 मदत हवी आहे?", "👇 खालील बटण दाबा", "✅ धन्यवाद! आम्ही लवकरच पाहून मदत करू."),
     "gu": ("▶️ જુઓ", "⬇️ ડાઉનલોડ", "📤 શેર", "🙋 મદદ જોઈએ છે?", "👇 નીચે બટન દબાવો", "✅ આભાર! અમે જલ્દી જોઈને મદદ કરીશું."),
 }
+_CARD_TXT["ne"] = ('▶️ हेर्नुहोस्', '⬇️ डाउनलोड', '📤 सेयर', '🙋 सहयोग चाहियो?', '👇 तलको बटन थिच्नुहोस्', '✅ धन्यवाद! हामी छिट्टै जाँचेर सहयोग गर्छौं।')
+_CARD_TXT["zh"] = ('▶️ 观看', '⬇️ 下载', '📤 分享', '🙋 需要帮助？', '👇 点击下方按钮', '✅ 谢谢！我们会尽快检查并帮助您。')
+_CARD_TXT["ja"] = ('▶️ 視聴', '⬇️ ダウンロード', '📤 共有', '🙋 ヘルプが必要？', '👇 下のボタンをタップ', '✅ ありがとうございます！すぐに確認してサポートします。')
+_CARD_TXT["dz"] = ('▶️ ལྟ།', '⬇️ ཕབ་ལེན།', '📤 བརྗེ་སྤོར།', '🙋 གྲོགས་རམ་དགོཔ་ཨིན་ན?', '👇 འོག་གི་མཐེབ་གཅུགས་ལུ་ཨེབ།', '✅ བཀའ་དྲིན་ཆེ། ང་བཅས་ཀྱིས་མྱུར་དྲགས་བརྟག་ཞིབ་འབད་ཏེ་གྲོགས་རམ་འབད་འོང་།')
+_CARD_TXT["ur"] = ('▶️ دیکھیں', '⬇️ ڈاؤن لوڈ', '📤 شیئر', '🙋 مدد چاہیے؟', '👇 نیچے بٹن دبائیں', '✅ شکریہ! ہم جلد دیکھ کر آپ کی مدد کریں گے۔')
+_CARD_TXT["kn"] = ('▶️ ವೀಕ್ಷಿಸಿ', '⬇️ ಡೌನ್\u200cಲೋಡ್', '📤 ಹಂಚಿ', '🙋 ಸಹಾಯ ಬೇಕೇ?', '👇 ಕೆಳಗಿನ ಬಟನ್ ಒತ್ತಿ', '✅ ಧನ್ಯವಾದ! ನಾವು ಶೀಘ್ರದಲ್ಲೇ ಪರಿಶೀಲಿಸಿ ಸಹಾಯ ಮಾಡುತ್ತೇವೆ.')
+_CARD_TXT["ml"] = ('▶️ കാണുക', '⬇️ ഡൗൺലോഡ്', '📤 പങ്കിടുക', '🙋 സഹായം വേണോ?', '👇 താഴെയുള്ള ബട്ടൺ അമർത്തുക', '✅ നന്ദി! ഞങ്ങൾ ഉടൻ പരിശോധിച്ച് സഹായിക്കാം.')
+_CARD_TXT["pa"] = ('▶️ ਵੇਖੋ', '⬇️ ਡਾਊਨਲੋਡ', '📤 ਸਾਂਝਾ ਕਰੋ', '🙋 ਮਦਦ ਚਾਹੀਦੀ ਹੈ?', '👇 ਹੇਠਾਂ ਬਟਨ ਦਬਾਓ', '✅ ਧੰਨਵਾਦ! ਅਸੀਂ ਜਲਦੀ ਵੇਖ ਕੇ ਮਦਦ ਕਰਾਂਗੇ।')
+_LISTEN_SIZE = {'en': ('🎧 Listen', '💾 Size'), 'hi': ('🎧 सुनें', '💾 साइज़'), 'bn': ('🎧 শুনুন', '💾 সাইজ'), 'ta': ('🎧 கேளுங்கள்', '💾 அளவு'), 'te': ('🎧 వినండి', '💾 సైజ్'), 'mr': ('🎧 ऐका', '💾 आकार'), 'gu': ('🎧 સાંભળો', '💾 સાઇઝ'), 'ne': ('🎧 सुन्नुहोस्', '💾 साइज'), 'zh': ('🎧 试听', '💾 大小'), 'ja': ('🎧 試聴', '💾 サイズ'), 'dz': ('🎧 ཉན།', '💾 ཚད།'), 'ur': ('🎧 سنیں', '💾 سائز'), 'kn': ('🎧 ಆಲಿಸಿ', '💾 ಗಾತ್ರ'), 'ml': ('🎧 കേൾക്കുക', '💾 വലുപ്പം'), 'pa': ('🎧 ਸੁਣੋ', '💾 ਸਾਈਜ਼')}
 _report_map = {}
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MovieSongSearch_bot").strip().lstrip("@")
 
 def _card_txt(uid):
     return _CARD_TXT.get(get_lang(uid), _CARD_TXT["en"])
 
-def _link_card(uid, label, link):
-    """ডাউনলোড লিংককে সুন্দর বাটনে দেয় (ক্যাপশনে কোনো লিংক দেখা যায় না)। ইউজারের ভাষায়।"""
+def _kind_size(title, quality):
+    """রিটার্ন (kind, size): kind = movie / song / game"""
+    games = (bot_settings.get("games") or {})
+    gk = next((k for k in games if _normalize_label(k) == _normalize_label(title)), None)
+    if gk:
+        return "game", (games[gk] or {}).get(quality) or next(iter((games[gk] or {}).values()), None)
+    if re.search(r"kbps|mp3|audio", str(quality), re.I):
+        return "song", None
+    return "movie", None
+
+def _link_card(uid, label, link, kind="movie", size=None):
+    """ডাউনলোড লিংককে সুন্দর বাটনে দেয়। movie: দেখুন+ডাউনলোড, song: শুনুন+ডাউনলোড, game: শুধু ডাউনলোড (+সাইজ)"""
     w, d, sh, rp, tap, _ = _card_txt(uid)
-    caption = f"🎬 {label}\n━━━━━━━━━━━━\n{tap}\n\n{t(uid, 'thank_you')}"
+    ls = _LISTEN_SIZE.get(get_lang(uid), _LISTEN_SIZE["en"])
+    icon = {"movie": "🎬", "song": "🎵", "game": "🎮"}.get(kind, "🎬")
+    caption = f"{icon} {label}\n━━━━━━━━━━━━\n"
+    if kind == "game" and size:
+        caption += f"{ls[1]}: {size}\n"
+    caption += f"{tap}\n\n{t(uid, 'thank_you')}"
     m = re.search(r"/d/([\w-]{20,})|[?&]id=([\w-]{20,})", link or "")
     fid = (m.group(1) or m.group(2)) if m else None
     if fid:
-        row1 = [InlineKeyboardButton(w, url=f"https://drive.google.com/file/d/{fid}/view"),
-                InlineKeyboardButton(d, url=f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t")]
+        view = InlineKeyboardButton(ls[0] if kind == "song" else w, url=f"https://drive.google.com/file/d/{fid}/view")
+        dl = InlineKeyboardButton(d, url=f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t")
+        row1 = [dl] if kind == "game" else [view, dl]
     else:
-        row1 = [InlineKeyboardButton(f"{w} / {d}", url=link)]
+        row1 = [InlineKeyboardButton(d if kind == "game" else f"{w} / {d}", url=link)]
     tok = hashlib.md5(label.encode("utf-8")).hexdigest()[:10]
     _report_map[tok] = label
     share_url = ("https://t.me/share/url?url=" + _urlparse.quote(f"https://t.me/{BOT_USERNAME}", safe="")
-                 + "&text=" + _urlparse.quote(f"🎬 {label}", safe=""))
+                 + "&text=" + _urlparse.quote(f"{icon} {label}", safe=""))
     row2 = [InlineKeyboardButton(sh, url=share_url), InlineKeyboardButton(rp, callback_data=f"rep::{tok}")]
     return caption, InlineKeyboardMarkup([row1, row2])
 
@@ -3322,7 +3559,8 @@ async def send_file_nav(update: Update, context: ContextTypes.DEFAULT_TYPE):
     del hist[:-HISTORY_LIMIT]
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
-    caption, markup = _link_card(uid, label, link)
+    _k, _sz = _kind_size(state["title"], quality)
+    caption, markup = _link_card(uid, label, link, _k, _sz)
     poster = find_poster(state["title"], state["path"])
     if poster:
         try:
@@ -3651,7 +3889,8 @@ async def send_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     del hist[:-HISTORY_LIMIT]
     save_state("download_history", DOWNLOAD_HISTORY_FILE, user_download_history)
 
-    caption, markup = _link_card(uid, f"{title} ({quality})", link)
+    _k, _sz = _kind_size(title, quality)
+    caption, markup = _link_card(uid, f"{title} ({quality})", link, _k, _sz)
     poster = find_poster(title, [])
     if poster:
         try:
@@ -4321,7 +4560,7 @@ _ADMIN_CMDS = {
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
-    "block", "unblock", "resetuser", "setlang", "post", "wa", "cast", "fixposter", "festival", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
+    "block", "unblock", "resetuser", "setlang", "post", "wa", "cast", "addgame", "fixposter", "festival", "postall", "stoppost", "repostall", "postreset", "channeltest", "setownerpw", "ownerphotoclear", "ownerpwstatus", "ownerphoto",
 }
 _flood, _muted = {}, {}
 
@@ -5046,6 +5285,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("post", post_to_channel))
     application.add_handler(CommandHandler("wa", wa_cmd))
     application.add_handler(CommandHandler("cast", cast_cmd))
+    application.add_handler(CommandHandler("addgame", addgame_cmd))
     application.add_handler(CommandHandler("postall", post_all))
     application.add_handler(CommandHandler("stoppost", stop_post))
     application.add_handler(CommandHandler("repostall", repost_all))
