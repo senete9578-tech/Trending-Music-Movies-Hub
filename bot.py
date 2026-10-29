@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-30-gestures"
+BOT_VERSION = "2026-10-30-audioui"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -5020,7 +5020,9 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         src = f"/s/{fid}{'?a=1' if is_audio else ''}"
         dl_src = f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"
         if is_audio:
-            tag = f'<audio id="m" controls autoplay preload="metadata" src="{src}" style="width:100%;margin-top:30vh"></audio>'
+            tag = (f'<audio id="m" autoplay preload="auto" src="{src}"></audio>'
+                   '<div id="ap"><div id="disc">\U0001F3B5</div><button id="pb">\u25b6</button>'
+                   '<input id="sk" type="range" min="0" max="1000" value="0"><div id="tm">0:00 / 0:00</div></div>')
         else:
             tag = f'<video id="m" controls autoplay playsinline preload="auto" src="{src}"></video>'
         from urllib.parse import quote as _q, urlsplit as _us
@@ -5035,6 +5037,9 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                '#err{display:none;position:fixed;left:6vw;right:6vw;top:14%;z-index:6;text-align:center;font-size:22px;line-height:1.4;'
                'background:rgba(0,0,0,.75);padding:16px;border-radius:14px}'
                '#err a{display:inline-block;margin:10px 6px 0;padding:12px 18px;background:#e50914;color:#fff;border-radius:10px;text-decoration:none;font-size:18px}'
+               '#ap{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;z-index:2;padding:0 8vw}'
+               '#disc{font-size:96px}#pb{width:96px;height:96px;border-radius:50%;border:0;background:#e50914;color:#fff;font-size:44px}'
+               '#sk{width:100%;max-width:520px;height:40px}#tm{font-size:20px}'
                '#hud{display:none;position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:7;background:rgba(0,0,0,.7);'
                'padding:10px 18px;border-radius:12px;font-size:22px}')
         js = ('var m=document.getElementById("m"),hud=document.getElementById("hud"),br=1,ht=0;'
@@ -5049,14 +5054,23 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'm.addEventListener("error",fail);'
               'm.addEventListener("loadedmetadata",function(){var p=m.play();if(p&&p.catch)p.catch(function(){});'
               'setTimeout(function(){if(m.videoWidth===0&&m.tagName==="VIDEO")fail()},3500)});'
+              'var G=null,lv=1;function gain(){if(G)return;try{var C=window.AudioContext||window.webkitAudioContext,c=new C();'
+              'var sr=c.createMediaElementSource(m);G=c.createGain();sr.connect(G);G.connect(c.destination);window._c=c}catch(x){G=0}}'
+              'function setv(x){lv=x;if(G){G.gain.value=x;if(window._c&&window._c.state==="suspended")window._c.resume()}else{m.volume=Math.min(1,x)}}'
               'var sx=0,sy=0,sv=0,side=0,on=false;'
-              'document.addEventListener("touchstart",function(e){var t=e.touches[0];if(t.clientY>innerHeight-90)return;'
-              'sx=t.clientX;sy=t.clientY;side=sx<innerWidth/2?1:2;on=true;sv=side===1?br:m.volume},{passive:true});'
-              'document.addEventListener("touchmove",function(e){if(!on)return;var t=e.touches[0];var d=(sy-t.clientY)/(innerHeight*0.6);'
+              'document.addEventListener("touchstart",function(e){var t=e.touches[0];if(t.clientY>innerHeight-90)return;gain();'
+              'sx=t.clientX;sy=t.clientY;side=sx<innerWidth/2?1:2;on=true;sv=side===1?br:lv},{passive:true});'
+              'document.addEventListener("touchmove",function(e){if(!on)return;var t=e.touches[0];var d=(sy-t.clientY)/(innerHeight*0.5);'
               'if(Math.abs(t.clientX-sx)>Math.abs(t.clientY-sy)*1.5)return;e.preventDefault();'
-              'if(side===1){br=Math.max(0.2,Math.min(1.6,sv+d));m.style.filter="brightness("+br+")";show("☀️ "+Math.round(br*100)+"%%")}'
-              'else{var v=Math.max(0,Math.min(1,sv+d));m.volume=v;m.muted=false;show("\U0001F50A "+Math.round(v*100)+"%%")}},{passive:false});'
+              'if(side===1){br=Math.max(0.2,Math.min(1.8,sv+d));m.style.filter="brightness("+br+")";show("\u2600\ufe0f "+Math.round(br*100)+"%%")}'
+              'else{var v=Math.max(0,Math.min(3,sv+d*2));setv(v);m.muted=false;show("\U0001F50A "+Math.round(v*100)+"%%")}},{passive:false});'
               'document.addEventListener("touchend",function(){on=false});'
+              'var pb=document.getElementById("pb"),sk=document.getElementById("sk"),tm=document.getElementById("tm");'
+              'function f(x){x=Math.floor(x||0);return Math.floor(x/60)+":"+("0"+x%%60).slice(-2)}'
+              'if(pb){pb.onclick=function(){gain();if(m.paused)m.play();else m.pause()};'
+              'm.addEventListener("play",function(){pb.textContent="\u23f8"});m.addEventListener("pause",function(){pb.textContent="\u25b6"});'
+              'm.addEventListener("timeupdate",function(){if(m.duration){sk.value=m.currentTime/m.duration*1000;tm.textContent=f(m.currentTime)+" / "+f(m.duration)}});'
+              'sk.oninput=function(){if(m.duration)m.currentTime=sk.value/1000*m.duration}}'
               'document.addEventListener("dblclick",function(){if(m.requestFullscreen)m.requestFullscreen()});') % (
               json.dumps(vlc_android), json.dumps(vlc_ios), vlc_android, json.dumps(mx_android))
         page = ('<!doctype html><html><head><meta charset="utf-8">'
