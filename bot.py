@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-29-stream"
+BOT_VERSION = "2026-10-29-fullscreen"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -5019,12 +5019,26 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         is_audio = request.url.path.startswith("/a/")
         src = f"/s/{fid}{'?a=1' if is_audio else ''}"
         dl_src = f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"
-        tag = (f'<audio controls autoplay preload="metadata" src="{src}" style="width:100%"></audio>' if is_audio else
-               f'<video controls autoplay playsinline preload="metadata" src="{src}" style="width:100%;max-height:80vh;background:#000"></video>')
-        page = ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-                '<title>CineTuneGame AI Hub</title><style>body{margin:0;background:#0b0b0f;color:#eee;font-family:sans-serif;padding:12px}'
-                'a{display:block;margin:10px 0;padding:12px;background:#222;color:#fff;text-align:center;border-radius:8px;text-decoration:none}</style></head><body>'
-                f'{tag}<a href="{dl_src}">⬇️ Download</a></body></html>')
+        if is_audio:
+            tag = f'<audio id="m" controls autoplay preload="metadata" src="{src}" style="width:100%;margin-top:30vh"></audio>'
+        else:
+            tag = f'<video id="m" controls autoplay playsinline preload="auto" src="{src}"></video>'
+        page = ('<!doctype html><html><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+                '<title>CineTuneGame AI Hub</title><style>'
+                'html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden}'
+                '#m{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;object-fit:contain;background:#000}'
+                '#dl{position:fixed;right:10px;top:10px;z-index:5;padding:8px 14px;background:rgba(0,0,0,.6);color:#fff;'
+                'border-radius:20px;text-decoration:none;font-size:14px}'
+                '#err{display:none;position:fixed;left:0;right:0;bottom:20px;text-align:center;z-index:6;padding:0 16px}'
+                '</style></head><body>'
+                f'{tag}<a id="dl" href="{dl_src}">⬇️ Download</a>'
+                '<div id="err">Cannot play this file here — please tap Download.</div>'
+                '<script>var m=document.getElementById("m");'
+                'm.addEventListener("error",function(){document.getElementById("err").style.display="block"});'
+                'm.addEventListener("loadedmetadata",function(){var p=m.play();if(p&&p.catch)p.catch(function(){})});'
+                'document.addEventListener("dblclick",function(){if(m.requestFullscreen)m.requestFullscreen()});'
+                '</script></body></html>')
         return HTMLResponse(page)
 
     _STREAM_LIMIT = int(float(os.environ.get("STREAM_MONTH_GB", "70")) * 1024**3)
