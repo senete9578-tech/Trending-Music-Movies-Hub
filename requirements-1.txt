@@ -1,0 +1,7 @@
+python-telegram-bot==21.4
+starlette
+uvicorn
+pymongo
+certifi
+Pillow
+httpx
