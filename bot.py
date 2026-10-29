@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-29-fullscreen"
+BOT_VERSION = "2026-10-30-gestures"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -5023,22 +5023,50 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
             tag = f'<audio id="m" controls autoplay preload="metadata" src="{src}" style="width:100%;margin-top:30vh"></audio>'
         else:
             tag = f'<video id="m" controls autoplay playsinline preload="auto" src="{src}"></video>'
+        from urllib.parse import quote as _q, urlsplit as _us
+        _u = _us(dl_src)
+        vlc_android = f"intent://{_u.netloc}{_u.path}?{_u.query}#Intent;scheme=https;package=org.videolan.vlc;type=video/*;end"
+        mx_android = f"intent://{_u.netloc}{_u.path}?{_u.query}#Intent;scheme=https;package=com.mxtech.videoplayer.ad;type=video/*;end"
+        vlc_ios = "vlc-x-callback://x-callback-url/stream?url=" + _q(dl_src, safe="")
+        css = ('html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden;touch-action:none}'
+               '#m{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;object-fit:contain;background:#000}'
+               '#bar{position:fixed;right:8px;top:8px;z-index:5;display:flex;gap:6px}'
+               '#bar a{padding:8px 12px;background:rgba(0,0,0,.6);color:#fff;border-radius:20px;text-decoration:none;font-size:14px}'
+               '#err{display:none;position:fixed;left:6vw;right:6vw;top:14%;z-index:6;text-align:center;font-size:22px;line-height:1.4;'
+               'background:rgba(0,0,0,.75);padding:16px;border-radius:14px}'
+               '#err a{display:inline-block;margin:10px 6px 0;padding:12px 18px;background:#e50914;color:#fff;border-radius:10px;text-decoration:none;font-size:18px}'
+               '#hud{display:none;position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:7;background:rgba(0,0,0,.7);'
+               'padding:10px 18px;border-radius:12px;font-size:22px}')
+        js = ('var m=document.getElementById("m"),hud=document.getElementById("hud"),br=1,ht=0;'
+              'var A=/Android/i.test(navigator.userAgent),I=/iPhone|iPad|iPod/i.test(navigator.userAgent);'
+              'function vlc(){location.href=A?%s:(I?%s:"%s")}'
+              'function mx(){location.href=%s}'
+              'document.getElementById("vlc").onclick=function(e){e.preventDefault();vlc()};'
+              'var e1=document.getElementById("vlc2"),e2=document.getElementById("mx2");'
+              'if(e1)e1.onclick=function(e){e.preventDefault();vlc()};if(e2)e2.onclick=function(e){e.preventDefault();mx()};'
+              'function show(t){hud.textContent=t;hud.style.display="block";clearTimeout(ht);ht=setTimeout(function(){hud.style.display="none"},900)}'
+              'function fail(){document.getElementById("err").style.display="block"}'
+              'm.addEventListener("error",fail);'
+              'm.addEventListener("loadedmetadata",function(){var p=m.play();if(p&&p.catch)p.catch(function(){});'
+              'setTimeout(function(){if(m.videoWidth===0&&m.tagName==="VIDEO")fail()},3500)});'
+              'var sx=0,sy=0,sv=0,side=0,on=false;'
+              'document.addEventListener("touchstart",function(e){var t=e.touches[0];if(t.clientY>innerHeight-90)return;'
+              'sx=t.clientX;sy=t.clientY;side=sx<innerWidth/2?1:2;on=true;sv=side===1?br:m.volume},{passive:true});'
+              'document.addEventListener("touchmove",function(e){if(!on)return;var t=e.touches[0];var d=(sy-t.clientY)/(innerHeight*0.6);'
+              'if(Math.abs(t.clientX-sx)>Math.abs(t.clientY-sy)*1.5)return;e.preventDefault();'
+              'if(side===1){br=Math.max(0.2,Math.min(1.6,sv+d));m.style.filter="brightness("+br+")";show("☀️ "+Math.round(br*100)+"%%")}'
+              'else{var v=Math.max(0,Math.min(1,sv+d));m.volume=v;m.muted=false;show("\U0001F50A "+Math.round(v*100)+"%%")}},{passive:false});'
+              'document.addEventListener("touchend",function(){on=false});'
+              'document.addEventListener("dblclick",function(){if(m.requestFullscreen)m.requestFullscreen()});') % (
+              json.dumps(vlc_android), json.dumps(vlc_ios), vlc_android, json.dumps(mx_android))
         page = ('<!doctype html><html><head><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
-                '<title>CineTuneGame AI Hub</title><style>'
-                'html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden}'
-                '#m{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;object-fit:contain;background:#000}'
-                '#dl{position:fixed;right:10px;top:10px;z-index:5;padding:8px 14px;background:rgba(0,0,0,.6);color:#fff;'
-                'border-radius:20px;text-decoration:none;font-size:14px}'
-                '#err{display:none;position:fixed;left:0;right:0;bottom:20px;text-align:center;z-index:6;padding:0 16px}'
-                '</style></head><body>'
-                f'{tag}<a id="dl" href="{dl_src}">⬇️ Download</a>'
-                '<div id="err">Cannot play this file here — please tap Download.</div>'
-                '<script>var m=document.getElementById("m");'
-                'm.addEventListener("error",function(){document.getElementById("err").style.display="block"});'
-                'm.addEventListener("loadedmetadata",function(){var p=m.play();if(p&&p.catch)p.catch(function(){})});'
-                'document.addEventListener("dblclick",function(){if(m.requestFullscreen)m.requestFullscreen()});'
-                '</script></body></html>')
+                f'<title>CineTuneGame AI Hub</title><style>{css}</style></head><body>'
+                f'{tag}<div id="bar"><a id="vlc" href="#">▶ VLC</a><a href="{dl_src}">⬇️ Download</a></div>'
+                '<div id="hud"></div>'
+                f'<div id="err">⚠️ This file format is not supported in the browser.<br>Open it in a video player or download it:<br>'
+                f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a></div>'
+                f'<script>{js}</script></body></html>')
         return HTMLResponse(page)
 
     _STREAM_LIMIT = int(float(os.environ.get("STREAM_MONTH_GB", "70")) * 1024**3)
