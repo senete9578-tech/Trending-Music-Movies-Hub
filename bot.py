@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-30-ui2"
+BOT_VERSION = "2026-10-30-ui3"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET", "change-me")
 
@@ -5044,6 +5044,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                '#tb{width:100%;display:flex;justify-content:space-between;gap:6px;transition:opacity .3s ease}#tb.hid{opacity:0;pointer-events:none}#tb .g{display:flex;gap:6px}'
                '#menu{position:fixed;right:8px;top:8px;z-index:8;display:none;flex-direction:column;gap:6px;opacity:0;transition:opacity .3s ease}'
                '#menu a{min-width:200px;box-sizing:border-box;padding:10px 14px;background:rgba(20,20,20,.92);color:#fff;border-radius:12px;text-decoration:none;font-size:15px}'
+               '#tb a{font-size:14px;padding:8px 9px}#tb{flex-wrap:wrap}'
                '#gs{position:fixed;left:0;right:0;top:0;bottom:70px;z-index:3;touch-action:none}'
                '#intro{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.92);opacity:0;transition:opacity 1s ease;pointer-events:none;display:none;font-size:20px;font-weight:600;text-align:center}'
                '#intro div{position:absolute;opacity:0;transform:translateY(12px);transition:opacity 1.1s ease,transform 1.1s ease;line-height:1.6}#intro.on div{opacity:1;transform:none}'
@@ -5095,6 +5096,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'm.addEventListener("timeupdate",function(){if(m.duration){sk.value=m.currentTime/m.duration*1000;tm.textContent=f(m.currentTime)+" / "+f(m.duration)}});'
               'sk.oninput=function(){if(m.duration)m.currentTime=sk.value/1000*m.duration}}'
               'document.addEventListener("dblclick",function(){if(m.requestFullscreen)m.requestFullscreen()});'
+              'var lt=0,st=0;setInterval(function(){if(m.paused||m.ended||document.hidden||G===undefined){st=0;return}if(Math.abs(m.currentTime-lt)<0.05){st++;if(st>=10&&(TU||!m.controls||m.controls))fail()}else{st=0;document.getElementById("err").style.display="none"}lt=m.currentTime},1500);'
               'var up=false,bg=true;try{if(localStorage.getItem("bg")==="0")bg=false}catch(x){}'
               'function g(i){return document.getElementById(i)}'
               'function tog(){gain();if(m.paused){up=false;m.play()}else{up=true;m.pause()}}'
@@ -5136,7 +5138,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                 f'{tag}<div id="bar"><div id="tb"><div class="g"><a id="vlc" href="#">VLC</a><a id="mxb" href="#">MX Player</a></div>'
                 f'<div class="g"><a id="dl" href="{dl_src}">⬇ Download</a><a id="shr" href="#">Share</a><a id="dots" href="#">⋮</a></div></div><a id="sp" href="#">1x</a></div>'
                 f'<div id="menu"><a id="bgt" href="#">Background play: ON</a><a id="vlc3" href="#">VLC</a><a id="mx3" href="#">MX Player</a><a href="{dl_src}">⬇ Download</a><a id="shr3" href="#">Share</a></div>'
-                '<div id="intro"><div class="it">\u2190 Speed \u2192</div><div class="il">Brightness<br>\u25b2<br>\u25bc</div><div class="ir">Sound<br>\u25b2<br>\u25bc</div>'
+                '<div id="intro"><div class="it">\u2190 &nbsp; Speed &nbsp; \u2192</div><div class="il">\u25b2<br>Bright<br>\u25bc</div><div class="ir">\u25b2<br>Sound<br>\u25bc</div>'
                 '<div class="ic">Background play available<small>Menu \u22ee \u2192 Background play</small></div></div>'
                 + ('' if is_audio else '<div id="gs"></div>')
                 +
@@ -5144,7 +5146,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                 f'<div id="err">⚠️ This file format is not supported in the browser.<br>Open it in a video player or download it:<br>'
                 f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a></div>'
                 f'<script>{js}</script></body></html>')
-        return HTMLResponse(page)
+        return HTMLResponse(page, headers={"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"})
 
     _STREAM_LIMIT = int(float(os.environ.get("STREAM_MONTH_GB", "70")) * 1024**3)
 
