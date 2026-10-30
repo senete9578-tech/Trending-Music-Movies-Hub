@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-30-ui5"
+BOT_VERSION = "2026-10-30-ui6"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 try:
@@ -3517,7 +3517,7 @@ def _link_card(uid, label, link, kind="movie", size=None):
         _view_url = (f"{_base}/{'a' if kind == 'song' else 'v'}/{fid}" if _base
                      else f"https://drive.google.com/file/d/{fid}/view")
         view = InlineKeyboardButton(ls[0] if kind == "song" else w, url=_view_url)
-        dl = InlineKeyboardButton(d, url=f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t")
+        dl = InlineKeyboardButton(d, url=(f"{_base}/d/{fid}" if _base else f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"))
         row1 = [dl] if kind == "game" else [view, dl]
     else:
         row1 = [InlineKeyboardButton(d if kind == "game" else f"{w} / {d}", url=link)]
@@ -5027,7 +5027,8 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         is_audio = request.url.path.startswith("/a/")
         src = f"/s/{fid}{'?a=1' if is_audio else ''}"
         _tk = hmac.new(TRANSCODE_SECRET.encode(), fid.encode(), hashlib.sha256).hexdigest()[:24]
-        dl_src = f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"
+        dl_src = f"/d/{fid}"
+        ext_src = f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"
         if is_audio:
             tag = (f'<audio id="m" preload="auto" src="{src}"></audio>'
                    '<div id="ap"><div id="disc">\U0001F3B5</div><button id="pb">\u25b6</button>'
@@ -5040,10 +5041,10 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
             else:
                 tag = f'<video id="m" controls playsinline preload="auto" src="{src}"></video>'
         from urllib.parse import quote as _q, urlsplit as _us
-        _u = _us(dl_src)
+        _u = _us(ext_src)
         vlc_android = f"intent://{_u.netloc}{_u.path}?{_u.query}#Intent;scheme=https;package=org.videolan.vlc;type=video/*;end"
         mx_android = f"intent://{_u.netloc}{_u.path}?{_u.query}#Intent;scheme=https;package=com.mxtech.videoplayer.ad;type=video/*;end"
-        vlc_ios = "vlc-x-callback://x-callback-url/stream?url=" + _q(dl_src, safe="")
+        vlc_ios = "vlc-x-callback://x-callback-url/stream?url=" + _q(ext_src, safe="")
         css = ('html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden;touch-action:none}'
                '#m{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;object-fit:contain;background:#000}'
                '#bar{position:fixed;left:8px;right:8px;top:8px;z-index:5;display:flex;flex-direction:column;align-items:flex-end;gap:6px}'
@@ -5318,6 +5319,52 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         mt = "audio/mpeg" if is_audio else (ct if ct.startswith("video/") else "video/mp4")
         return StreamingResponse(gen(), status_code=r.status_code, media_type=mt, headers=out)
 
+    async def download_file(request: Request) -> Response:
+        """ডাউনলোড নিজের ডোমেইন থেকে — ব্রাউজারে Google/Drive নাম দেখায় না। সীমা পার হলে সরাসরি লিংকে পাঠায়।"""
+        import httpx
+        from starlette.responses import StreamingResponse, RedirectResponse
+        fid = request.path_params["fid"]
+        if not re.fullmatch(r"[\w-]{20,}", fid):
+            return PlainTextResponse("Bad id", status_code=400)
+        direct = f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"
+        ym = datetime.now(timezone.utc).strftime("%Y-%m")
+        st = bot_settings.setdefault("stream_used", {})
+        if st.get("m") != ym:
+            st.clear(); st["m"] = ym; st["b"] = 0
+        if st.get("b", 0) >= _STREAM_LIMIT:
+            return RedirectResponse(direct, status_code=302)
+        hdr = {}
+        if request.headers.get("range"):
+            hdr["Range"] = request.headers["range"]
+        client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
+        try:
+            r = await client.send(client.build_request("GET", direct, headers=hdr), stream=True)
+        except Exception:
+            await client.aclose()
+            return RedirectResponse(direct, status_code=302)
+        ct = r.headers.get("content-type", "")
+        if r.status_code >= 400 or "text/html" in ct:
+            await r.aclose(); await client.aclose()
+            return RedirectResponse(direct, status_code=302)
+        out = {"Accept-Ranges": "bytes", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+        for h in ("content-length", "content-range"):
+            if r.headers.get(h):
+                out[h] = r.headers[h]
+        cd = r.headers.get("content-disposition")
+        out["Content-Disposition"] = cd if cd else f'attachment; filename="CineTuneGame-{fid[:8]}"'
+        async def gen():
+            try:
+                async for chunk in r.aiter_raw(65536):
+                    st["b"] = st.get("b", 0) + len(chunk)
+                    yield chunk
+            finally:
+                await r.aclose(); await client.aclose()
+                try:
+                    _save_settings()
+                except Exception:
+                    pass
+        return StreamingResponse(gen(), status_code=r.status_code, media_type="application/octet-stream", headers=out)
+
     async def poster_img(request: Request) -> Response:
         tid = request.path_params["tid"]
         t, ph = await _poster_of(tid)
@@ -5354,6 +5401,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         Route("/a/{fid}", player_page, methods=["GET"]),
         Route("/s/{fid}", stream_media, methods=["GET"]),
         Route("/pl/{fid}", playlist, methods=["GET"]),
+        Route("/d/{fid}", download_file, methods=["GET"]),
         Route("/rt/info/{fid}", rt_info, methods=["GET"]),
         Route("/rt/t/{fid}", rt_stream, methods=["GET"]),
         Route("/", health, methods=["GET"]),
