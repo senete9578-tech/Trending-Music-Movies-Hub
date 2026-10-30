@@ -5,3 +5,4 @@ pymongo
 certifi
 Pillow
 httpx
+imageio-ffmpeg

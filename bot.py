@@ -794,9 +794,15 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-30-ui4"
+BOT_VERSION = "2026-10-30-ui5"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
-TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET", "change-me")
+TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
+try:
+    import imageio_ffmpeg as _iiof
+    _FFMPEG = _iiof.get_ffmpeg_exe()
+except Exception:
+    _FFMPEG = None
+_TU = TRANSCODE_URL or ("/rt" if _FFMPEG else "")
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -5027,7 +5033,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                    '<div id="ap"><div id="disc">\U0001F3B5</div><button id="pb">\u25b6</button>'
                    '<input id="sk" type="range" min="0" max="1000" value="0"><div id="tm">0:00 / 0:00</div></div>')
         else:
-            if TRANSCODE_URL:
+            if _TU:
                 tag = ('<video id="m" playsinline preload="auto"></video>'
                        '<div id="vc"><button id="vb">-10</button><button id="vp">\u23f8</button><button id="vf">+10</button>'
                        '<input id="vs" type="range" min="0" max="1000" value="0"><span id="vt">0:00</span><button id="vz">\u26f6</button></div>')
@@ -5060,7 +5066,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                '#sk{width:100%;max-width:520px;height:40px}#tm{font-size:20px}'
                '#hud{display:none;position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:7;background:rgba(0,0,0,.7);'
                'padding:10px 18px;border-radius:12px;font-size:22px}')
-        _pre = "var FID=%s,TU=%s,TK=%s,FB=%s;" % (json.dumps(fid), json.dumps(TRANSCODE_URL if not is_audio else ""), json.dumps(_tk), json.dumps(src))
+        _pre = "var FID=%s,TU=%s,TK=%s,FB=%s;" % (json.dumps(fid), json.dumps(_TU if not is_audio else ""), json.dumps(_tk), json.dumps(src))
         js = _pre + ('var m=document.getElementById("m"),hud=document.getElementById("hud"),br=1,ht=0;'
               'var A=/Android/i.test(navigator.userAgent),I=/iPhone|iPad|iPod/i.test(navigator.userAgent);'
               'function vlc(){if(A)location.href=%s;else if(I)location.href=%s;else{location.href="/pl/"+FID+".m3u%s";show("Open the downloaded file with VLC")}}'
@@ -5142,7 +5148,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'm.addEventListener("timeupdate",function(){if(dur){vs.value=cur()/dur*1000;vt.textContent=f(cur())+" / "+f(dur)}});'
               'vs.oninput=function(){vt.textContent=f(vs.value/1000*dur)+" / "+f(dur)};vs.onchange=function(){ld(vs.value/1000*dur)};'
               'var ac=window.AbortController?new AbortController():null,tmo=setTimeout(function(){if(ac)ac.abort();useFB()},7000);'
-              'fetch(TU+"/info/"+FID+"?k="+TK,ac?{signal:ac.signal}:{}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){clearTimeout(tmo);dur=j.duration||0;if(!dur)throw 0;if(!fbd)ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
+              'fetch(TU+"/info/"+FID+"?k="+TK,ac?{signal:ac.signal}:{}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){clearTimeout(tmo);dur=j.duration||0;if(!dur||j.copy===false)throw 0;if(!fbd)ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
               ) % (
               json.dumps(vlc_android), json.dumps(vlc_ios), "", json.dumps(mx_android))
         page = ('<!doctype html><html><head><meta charset="utf-8">'
@@ -5160,6 +5166,100 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                 f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a></div>'
                 f'<script>{js}</script></body></html>')
         return HTMLResponse(page, headers={"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"})
+
+    _rt_info = {}
+    _rt_sem = asyncio.Semaphore(1)
+
+    def _rt_ok(fid, k):
+        good = hmac.new(TRANSCODE_SECRET.encode(), fid.encode(), hashlib.sha256).hexdigest()[:24]
+        return bool(re.fullmatch(r"[\w-]{20,}", fid)) and hmac.compare_digest(good, k or "")
+
+    def _rt_src(fid):
+        return f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"
+
+    async def _rt_probe(fid):
+        if fid in _rt_info:
+            return _rt_info[fid]
+        try:
+            p = await asyncio.create_subprocess_exec(_FFMPEG, "-hide_banner", "-i", _rt_src(fid),
+                                                     stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+            _, err = await asyncio.wait_for(p.communicate(), 45)
+        except Exception:
+            try:
+                p.kill()
+            except Exception:
+                pass
+            return {}
+        t = err.decode("utf-8", "ignore")
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", t)
+        if not m:
+            return {}
+        dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+        v = re.search(r"Video:\s*([a-z0-9_]+)[^\n]*?(yuv\w+)?", t)
+        vc = v.group(1) if v else ""
+        pix = re.search(r"Video:[^\n]*?(yuv\w+|gbr\w+|nv\d+)", t)
+        copy = vc == "h264" and (not pix or pix.group(1) in ("yuv420p", "yuvj420p", "nv12"))
+        r = {"duration": dur, "copy": bool(copy)}
+        _rt_info[fid] = r
+        return r
+
+    async def rt_info(request: Request) -> Response:
+        from starlette.responses import JSONResponse
+        fid = request.path_params["fid"]
+        if not _FFMPEG or not _rt_ok(fid, request.query_params.get("k")):
+            return PlainTextResponse("forbidden", status_code=403)
+        return JSONResponse(await _rt_probe(fid), headers={"Cache-Control": "no-store"})
+
+    async def rt_stream(request: Request) -> Response:
+        from starlette.responses import StreamingResponse
+        fid = request.path_params["fid"]
+        if not _FFMPEG or not _rt_ok(fid, request.query_params.get("k")):
+            return PlainTextResponse("forbidden", status_code=403)
+        ym = datetime.now(timezone.utc).strftime("%Y-%m")
+        st = bot_settings.setdefault("stream_used", {})
+        if st.get("m") != ym:
+            st.clear(); st["m"] = ym; st["b"] = 0
+        if st.get("b", 0) >= _STREAM_LIMIT:
+            return PlainTextResponse("limit", status_code=503)
+        try:
+            ss = max(0.0, float(request.query_params.get("ss", "0")))
+        except ValueError:
+            ss = 0.0
+        inf = await _rt_probe(fid)
+        if not inf or not inf.get("copy"):
+            return PlainTextResponse("unsupported", status_code=415)
+        if _rt_sem.locked():
+            return PlainTextResponse("busy", status_code=503)
+        cmd = [_FFMPEG, "-v", "error", "-nostdin"] + (["-ss", str(ss)] if ss > 0 else []) + [
+            "-i", _rt_src(fid), "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-sn", "-dn",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"]
+        await _rt_sem.acquire()
+        try:
+            p = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        except Exception:
+            _rt_sem.release()
+            return PlainTextResponse("error", status_code=500)
+
+        async def gen():
+            try:
+                while True:
+                    b = await p.stdout.read(65536)
+                    if not b:
+                        break
+                    st["b"] = st.get("b", 0) + len(b)
+                    yield b
+            finally:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+                _rt_sem.release()
+                try:
+                    _save_settings()
+                except Exception:
+                    pass
+        return StreamingResponse(gen(), media_type="video/mp4", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     async def playlist(request: Request) -> Response:
         fid = request.path_params["fid"]
@@ -5254,6 +5354,8 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         Route("/a/{fid}", player_page, methods=["GET"]),
         Route("/s/{fid}", stream_media, methods=["GET"]),
         Route("/pl/{fid}", playlist, methods=["GET"]),
+        Route("/rt/info/{fid}", rt_info, methods=["GET"]),
+        Route("/rt/t/{fid}", rt_stream, methods=["GET"]),
         Route("/", health, methods=["GET"]),
         Route(f"/{BOT_TOKEN}", telegram_webhook, methods=["POST"]),
     ])
