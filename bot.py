@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-30-audioui"
+BOT_VERSION = "2026-10-30-speed"
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -5038,7 +5038,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                'background:rgba(0,0,0,.75);padding:16px;border-radius:14px}'
                '#err a{display:inline-block;margin:10px 6px 0;padding:12px 18px;background:#e50914;color:#fff;border-radius:10px;text-decoration:none;font-size:18px}'
                '#ap{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;z-index:2;padding:0 8vw}'
-               '#disc{font-size:96px}#pb{width:96px;height:96px;border-radius:50%;border:0;background:#e50914;color:#fff;font-size:44px}'
+               '#disc{font-size:96px}#pb{width:110px;height:110px;border-radius:50%;border:4px solid #000;box-shadow:0 0 0 4px #fff;background:#fff;color:#000;font-size:50px;line-height:1}#sk{accent-color:#fff}'
                '#sk{width:100%;max-width:520px;height:40px}#tm{font-size:20px}'
                '#hud{display:none;position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:7;background:rgba(0,0,0,.7);'
                'padding:10px 18px;border-radius:12px;font-size:22px}')
@@ -5049,20 +5049,24 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'document.getElementById("vlc").onclick=function(e){e.preventDefault();vlc()};'
               'var e1=document.getElementById("vlc2"),e2=document.getElementById("mx2");'
               'if(e1)e1.onclick=function(e){e.preventDefault();vlc()};if(e2)e2.onclick=function(e){e.preventDefault();mx()};'
+              'var spb=document.getElementById("sp");if(spb)spb.onclick=function(e){e.preventDefault();var o=[0.5,0.75,1,1.25,1.5,2,3],i=o.indexOf(sp);setsp(o[(i+1)%%o.length])};'
               'function show(t){hud.textContent=t;hud.style.display="block";clearTimeout(ht);ht=setTimeout(function(){hud.style.display="none"},900)}'
               'function fail(){document.getElementById("err").style.display="block"}'
               'm.addEventListener("error",fail);'
               'm.addEventListener("loadedmetadata",function(){var p=m.play();if(p&&p.catch)p.catch(function(){});'
               'setTimeout(function(){if(m.videoWidth===0&&m.tagName==="VIDEO")fail()},3500)});'
-              'var G=null,lv=1;function gain(){if(G)return;try{var C=window.AudioContext||window.webkitAudioContext,c=new C();'
-              'var sr=c.createMediaElementSource(m);G=c.createGain();sr.connect(G);G.connect(c.destination);window._c=c}catch(x){G=0}}'
-              'function setv(x){lv=x;if(G){G.gain.value=x;if(window._c&&window._c.state==="suspended")window._c.resume()}else{m.volume=Math.min(1,x)}}'
-              'var sx=0,sy=0,sv=0,side=0,on=false;'
+              'var G=null,lv=1,sp=1;function gain(){if(G!==null)return;try{var C=window.AudioContext||window.webkitAudioContext,c=new C();'
+              'var sr=c.createMediaElementSource(m);G=c.createGain();var k=c.createDynamicsCompressor();k.threshold.value=-12;k.knee.value=20;k.ratio.value=12;'
+              'sr.connect(G);G.connect(k);k.connect(c.destination);window._c=c;G.gain.value=lv<=1?lv:1+(lv-1)*3}catch(x){G=0}}'
+              'function setv(x){lv=x;var g=x<=1?x:1+(x-1)*3;if(G){G.gain.value=g;if(window._c&&window._c.state==="suspended")window._c.resume()}else{m.volume=Math.min(1,x)}}'
+              'function setsp(x){sp=Math.max(0.25,Math.min(3,Math.round(x*4)/4));m.playbackRate=sp;var b=document.getElementById("sp");if(b)b.textContent=sp+"x";show("\u23e9 "+sp+"x")}'
+              'var sx=0,sy=0,sv=0,sp0=1,side=0,on=false;'
               'document.addEventListener("touchstart",function(e){var t=e.touches[0];if(t.clientY>innerHeight-90)return;gain();'
-              'sx=t.clientX;sy=t.clientY;side=sx<innerWidth/2?1:2;on=true;sv=side===1?br:lv},{passive:true});'
-              'document.addEventListener("touchmove",function(e){if(!on)return;var t=e.touches[0];var d=(sy-t.clientY)/(innerHeight*0.5);'
-              'if(Math.abs(t.clientX-sx)>Math.abs(t.clientY-sy)*1.5)return;e.preventDefault();'
-              'if(side===1){br=Math.max(0.2,Math.min(1.8,sv+d));m.style.filter="brightness("+br+")";show("\u2600\ufe0f "+Math.round(br*100)+"%%")}'
+              'sx=t.clientX;sy=t.clientY;sp0=sp;side=sx<innerWidth/2?1:2;on=true;sv=side===1?br:lv},{passive:true});'
+              'document.addEventListener("touchmove",function(e){if(!on)return;var t=e.touches[0];var dx=t.clientX-sx,dy=sy-t.clientY;'
+              'if(Math.abs(dx)>Math.abs(dy)*1.5){if(Math.abs(dx)>30){e.preventDefault();setsp(sp0+dx/(innerWidth*0.5))}return}'
+              'e.preventDefault();var d=dy/(innerHeight*0.5);'
+              'if(side===1){br=Math.max(0.2,Math.min(1.8,sv+d));var fb=br<=1?br:1+(br-1)*1.6;m.style.filter="brightness("+fb+")";show("\u2600\ufe0f "+Math.round(br*100)+"%%")}'
               'else{var v=Math.max(0,Math.min(3,sv+d*2));setv(v);m.muted=false;show("\U0001F50A "+Math.round(v*100)+"%%")}},{passive:false});'
               'document.addEventListener("touchend",function(){on=false});'
               'var pb=document.getElementById("pb"),sk=document.getElementById("sk"),tm=document.getElementById("tm");'
@@ -5076,7 +5080,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         page = ('<!doctype html><html><head><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
                 f'<title>CineTuneGame AI Hub</title><style>{css}</style></head><body>'
-                f'{tag}<div id="bar"><a id="vlc" href="#">▶ VLC</a><a href="{dl_src}">⬇️ Download</a></div>'
+                f'{tag}<div id="bar"><a id="sp" href="#">1x</a><a id="vlc" href="#">▶ VLC</a><a href="{dl_src}">⬇️ Download</a></div>'
                 '<div id="hud"></div>'
                 f'<div id="err">⚠️ This file format is not supported in the browser.<br>Open it in a video player or download it:<br>'
                 f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a></div>'
