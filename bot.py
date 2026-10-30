@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-30-ui3"
+BOT_VERSION = "2026-10-30-ui4"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET", "change-me")
 
@@ -5023,16 +5023,16 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         _tk = hmac.new(TRANSCODE_SECRET.encode(), fid.encode(), hashlib.sha256).hexdigest()[:24]
         dl_src = f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"
         if is_audio:
-            tag = (f'<audio id="m" autoplay preload="auto" src="{src}"></audio>'
+            tag = (f'<audio id="m" preload="auto" src="{src}"></audio>'
                    '<div id="ap"><div id="disc">\U0001F3B5</div><button id="pb">\u25b6</button>'
                    '<input id="sk" type="range" min="0" max="1000" value="0"><div id="tm">0:00 / 0:00</div></div>')
         else:
             if TRANSCODE_URL:
-                tag = ('<video id="m" autoplay playsinline preload="auto"></video>'
+                tag = ('<video id="m" playsinline preload="auto"></video>'
                        '<div id="vc"><button id="vb">-10</button><button id="vp">\u23f8</button><button id="vf">+10</button>'
                        '<input id="vs" type="range" min="0" max="1000" value="0"><span id="vt">0:00</span><button id="vz">\u26f6</button></div>')
             else:
-                tag = f'<video id="m" controls autoplay playsinline preload="auto" src="{src}"></video>'
+                tag = f'<video id="m" controls playsinline preload="auto" src="{src}"></video>'
         from urllib.parse import quote as _q, urlsplit as _us
         _u = _us(dl_src)
         vlc_android = f"intent://{_u.netloc}{_u.path}?{_u.query}#Intent;scheme=https;package=org.videolan.vlc;type=video/*;end"
@@ -5046,8 +5046,8 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                '#menu a{min-width:200px;box-sizing:border-box;padding:10px 14px;background:rgba(20,20,20,.92);color:#fff;border-radius:12px;text-decoration:none;font-size:15px}'
                '#tb a{font-size:14px;padding:8px 9px}#tb{flex-wrap:wrap}'
                '#gs{position:fixed;left:0;right:0;top:0;bottom:70px;z-index:3;touch-action:none}'
-               '#intro{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.92);opacity:0;transition:opacity 1s ease;pointer-events:none;display:none;font-size:20px;font-weight:600;text-align:center}'
-               '#intro div{position:absolute;opacity:0;transform:translateY(12px);transition:opacity 1.1s ease,transform 1.1s ease;line-height:1.6}#intro.on div{opacity:1;transform:none}'
+               '#intro{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.92);opacity:0;transition:opacity .6s ease;pointer-events:none;display:none;font-size:20px;font-weight:600;text-align:center}'
+               '#intro div{position:absolute;opacity:0;transform:translateY(12px);transition:opacity .6s ease,transform .6s ease;line-height:1.6}#intro.on div{opacity:1;transform:none}'
                '#intro .il{left:6vw;top:50%;margin-top:-60px}#intro .ir{right:6vw;top:50%;margin-top:-60px}#intro .it{top:9%;left:0;right:0}#intro .ic{left:0;right:0;bottom:12%;font-size:17px;color:#ffd24d}#intro small{display:block;font-weight:400;font-size:13px;color:#ccc}'
                '#vc{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;align-items:center;gap:6px;padding:10px 8px;background:linear-gradient(transparent,rgba(0,0,0,.85))}'
                '#vc button{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:18px;padding:8px 12px;font-size:15px}#vs{flex:1;accent-color:#fff;min-width:0}#vt{font-size:13px;white-space:nowrap}'
@@ -5063,8 +5063,8 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         _pre = "var FID=%s,TU=%s,TK=%s,FB=%s;" % (json.dumps(fid), json.dumps(TRANSCODE_URL if not is_audio else ""), json.dumps(_tk), json.dumps(src))
         js = _pre + ('var m=document.getElementById("m"),hud=document.getElementById("hud"),br=1,ht=0;'
               'var A=/Android/i.test(navigator.userAgent),I=/iPhone|iPad|iPod/i.test(navigator.userAgent);'
-              'function vlc(){location.href=A?%s:(I?%s:"%s")}'
-              'function mx(){location.href=%s}'
+              'function vlc(){if(A)location.href=%s;else if(I)location.href=%s;else{location.href="/pl/"+FID+".m3u%s";show("Open the downloaded file with VLC")}}'
+              'function mx(){if(A)location.href=%s;else show("MX Player works on Android only - use VLC")}'
               'document.getElementById("vlc").onclick=function(e){e.preventDefault();vlc()};document.getElementById("mxb").onclick=function(e){e.preventDefault();mx()};'
               'var e1=document.getElementById("vlc2"),e2=document.getElementById("mx2");'
               'if(e1)e1.onclick=function(e){e.preventDefault();vlc()};if(e2)e2.onclick=function(e){e.preventDefault();mx()};'
@@ -5072,23 +5072,34 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'function show(t){hud.textContent=t;hud.style.display="block";clearTimeout(ht);ht=setTimeout(function(){hud.style.display="none"},900)}'
               'function fail(){document.getElementById("err").style.display="block"}'
               'm.addEventListener("error",fail);'
-              'm.addEventListener("loadedmetadata",function(){var p=m.play();if(p&&p.catch)p.catch(function(){});'
+              'm.addEventListener("loadedmetadata",function(){if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}'
               'if(!TU&&m.tagName==="VIDEO")setTimeout(function(){if(m.videoWidth===0)fail()},3500)});'
               'var G=null,lv=1,sp=1;function gain(){if(G!==null)return;try{var C=window.AudioContext||window.webkitAudioContext,c=new C();'
               'var sr=c.createMediaElementSource(m);G=c.createGain();var k=c.createDynamicsCompressor();k.threshold.value=-12;k.knee.value=20;k.ratio.value=12;'
               'sr.connect(G);G.connect(k);k.connect(c.destination);window._c=c;G.gain.value=lv<=1?lv:1+(lv-1)*3}catch(x){G=0}}'
               'function setv(x){lv=x;var g=x<=1?x:1+(x-1)*3;if(G){G.gain.value=g;if(window._c&&window._c.state==="suspended")window._c.resume()}else{m.volume=Math.min(1,x)}}'
               'function setsp(x){sp=Math.max(0.25,Math.min(3,Math.round(x*4)/4));m.defaultPlaybackRate=sp;m.playbackRate=sp;var b=document.getElementById("sp");if(b)b.textContent=sp+"x";show("\u23e9 "+sp+"x")}'
-              'var sx=0,sy=0,sv=0,sp0=1,side=0,on=false;'
+              'var sx=0,sy=0,sv=0,sp0=1,side=0,on=false,act=false,dir="",started=false,BT=document.getElementById("ap")||m;'
               'var GS=document.getElementById("gs")||document;'
-              'GS.addEventListener("touchstart",function(e){var t=e.touches[0];if(t.clientY>innerHeight-90)return;gain();'
-              'sx=t.clientX;sy=t.clientY;sp0=sp;side=sx<innerWidth/2?1:2;on=true;sv=side===1?br:lv},{passive:true});'
+              'function ctl(e){var t=e.target;return !!(t&&t.closest&&t.closest("input,button,a,#bar,#menu,#vc"))}'
+              'function setbr(x){br=Math.max(0.2,Math.min(1.8,x));var fb=br<=1?br:1+(br-1)*1.6;BT.style.filter="brightness("+fb+")";show("☀️ "+Math.round(br*100)+"%%")}'
+              'function setvol(x){var v=Math.max(0,Math.min(3,x));gain();setv(v);m.muted=false;show("\U0001F50A "+Math.round(v*100)+"%%")}'
+              'GS.addEventListener("touchstart",function(e){if(ctl(e)||e.touches.length>1){on=false;return}var t=e.touches[0];if(t.clientY>innerHeight-90){on=false;return}gain();'
+              'sx=t.clientX;sy=t.clientY;side=sx<innerWidth/2?1:2;on=true;act=false;dir=""},{passive:true});'
               'GS.addEventListener("touchmove",function(e){if(!on)return;var t=e.touches[0];var dx=t.clientX-sx,dy=sy-t.clientY;'
-              'if(Math.abs(dx)>Math.abs(dy)*1.5){if(Math.abs(dx)>30){e.preventDefault();setsp(sp0+dx/(innerWidth*0.5))}return}'
-              'e.preventDefault();var d=dy/(innerHeight*0.5);'
-              'if(side===1){br=Math.max(0.2,Math.min(1.8,sv+d));var fb=br<=1?br:1+(br-1)*1.6;m.style.filter="brightness("+fb+")";show("\u2600\ufe0f "+Math.round(br*100)+"%%")}'
-              'else{var v=Math.max(0,Math.min(3,sv+d*2));setv(v);m.muted=false;show("\U0001F50A "+Math.round(v*100)+"%%")}},{passive:false});'
-              'GS.addEventListener("touchend",function(){on=false});'
+              'if(!act){if(Math.max(Math.abs(dx),Math.abs(dy))<16)return;act=true;dir=Math.abs(dx)>Math.abs(dy)*1.3?"h":"v";sx=t.clientX;sy=t.clientY;sp0=sp;sv=side===1?br:lv;return}'
+              'e.preventDefault();if(dir==="h"){setsp(sp0+dx/(innerWidth*0.5));return}'
+              'var d=dy/(innerHeight*0.5);if(side===1)setbr(sv+d);else setvol(sv+d*2)},{passive:false});'
+              'GS.addEventListener("touchend",function(){on=false;act=false});GS.addEventListener("touchcancel",function(){on=false;act=false});'
+              'GS.addEventListener("wheel",function(e){if(ctl(e))return;e.preventDefault();var d=e.deltaY<0?0.1:-0.1;if(e.clientX<innerWidth/2)setbr(br+d);else setvol(lv+d)},{passive:false});'
+              'function seekBy(d){if(TU&&typeof ld==="function"&&dur){ld(cur()+d);show((d>0?"⏩ +":"⏪ ")+d+"s")}else{var x=m.currentTime+d;m.currentTime=Math.max(0,isFinite(m.duration)?Math.min(m.duration,x):x);show((d>0?"⏩ +":"⏪ ")+d+"s")}}'
+              'document.addEventListener("keydown",function(e){var k=e.key;if(e.ctrlKey||e.metaKey||e.altKey)return;'
+              'if(k==="ArrowUp"||k==="ArrowDown"){e.preventDefault();var d=k==="ArrowUp"?0.1:-0.1;if(e.shiftKey)setbr(br+d);else setvol(lv+d)}'
+              'else if(k==="ArrowLeft"||k==="ArrowRight"){e.preventDefault();seekBy(k==="ArrowRight"?10:-10)}'
+              'else if(k===" "){e.preventDefault();tog()}'
+              'else if(k==="f"||k==="F"){var de=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else if(de.requestFullscreen)de.requestFullscreen()}'
+              'else if(k===">"||k==="."){setsp(sp+0.25)}else if(k==="<"||k===","){setsp(sp-0.25)}'
+              'else if(k==="m"||k==="M"){m.muted=!m.muted;show(m.muted?"Muted":"Sound on")}});'
               'var pb=document.getElementById("pb"),sk=document.getElementById("sk"),tm=document.getElementById("tm");'
               'function f(x){x=Math.floor(x||0);return Math.floor(x/60)+":"+("0"+x%%60).slice(-2)}'
               'if(pb){pb.onclick=tog;'
@@ -5116,22 +5127,24 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'g("dots").onclick=function(e){e.preventDefault();e.stopPropagation();openM()};'
               'document.addEventListener("click",function(e){if(menu.style.display==="flex"&&!menu.contains(e.target))closeM()});'
               'var gsd=g("gs");if(gsd)gsd.addEventListener("click",function(){if(menu.style.display==="flex")return;tog()});'
-              'var it=g("intro");it.style.display="block";setTimeout(function(){it.style.opacity=1;it.className="on"},60);'
-              'setTimeout(function(){it.style.opacity=0;it.className=""},4000);setTimeout(function(){it.style.display="none"},5100);'
+              'var it=g("intro");it.style.display="block";setTimeout(function(){it.style.opacity=1;it.className="on"},50);'
+              'setTimeout(function(){it.style.opacity=0;it.className=""},2400);'
+              'setTimeout(function(){it.style.display="none";started=true;var p=m.play();if(p&&p.catch)p.catch(function(){show("Tap to play")})},3000);'
               'var vc=document.getElementById("vc");'
               'if(vc&&TU){var off=0,dur=0,vp=document.getElementById("vp"),vs=document.getElementById("vs"),vt=document.getElementById("vt");'
               'function cur(){return off+(m.currentTime||0)}'
-              'function ld(t){off=Math.max(0,dur?Math.min(t,dur-2):t);m.src=TU+"/t/"+FID+"?k="+TK+"&ss="+off;var p=m.play();if(p&&p.catch)p.catch(function(){})}'
-              'function useFB(){TU="";vc.style.display="none";m.controls=true;m.src=FB}'
+              'function ld(t){off=Math.max(0,dur?Math.min(t,dur-2):t);m.src=TU+"/t/"+FID+"?k="+TK+"&ss="+off;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
+              'var fbd=false;function useFB(){if(fbd)return;fbd=true;TU="";vc.style.display="none";m.controls=true;m.src=FB;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
               'vp.onclick=tog;'
               'm.addEventListener("play",function(){vp.textContent="\u23f8"});m.addEventListener("pause",function(){vp.textContent="\u25b6"});'
               'document.getElementById("vb").onclick=function(){ld(cur()-10)};document.getElementById("vf").onclick=function(){ld(cur()+10)};'
               'document.getElementById("vz").onclick=function(){var d=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else if(d.requestFullscreen)d.requestFullscreen()};'
               'm.addEventListener("timeupdate",function(){if(dur){vs.value=cur()/dur*1000;vt.textContent=f(cur())+" / "+f(dur)}});'
               'vs.oninput=function(){vt.textContent=f(vs.value/1000*dur)+" / "+f(dur)};vs.onchange=function(){ld(vs.value/1000*dur)};'
-              'fetch(TU+"/info/"+FID+"?k="+TK).then(function(r){return r.json()}).then(function(j){dur=j.duration||0;if(!dur)throw 0;ld(0)}).catch(useFB)}'
+              'var ac=window.AbortController?new AbortController():null,tmo=setTimeout(function(){if(ac)ac.abort();useFB()},7000);'
+              'fetch(TU+"/info/"+FID+"?k="+TK,ac?{signal:ac.signal}:{}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){clearTimeout(tmo);dur=j.duration||0;if(!dur)throw 0;if(!fbd)ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
               ) % (
-              json.dumps(vlc_android), json.dumps(vlc_ios), vlc_android, json.dumps(mx_android))
+              json.dumps(vlc_android), json.dumps(vlc_ios), "", json.dumps(mx_android))
         page = ('<!doctype html><html><head><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
                 f'<title>CineTuneGame AI Hub</title><style>{css}</style></head><body>'
@@ -5147,6 +5160,15 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                 f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a></div>'
                 f'<script>{js}</script></body></html>')
         return HTMLResponse(page, headers={"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"})
+
+    async def playlist(request: Request) -> Response:
+        fid = request.path_params["fid"]
+        if fid.endswith(".m3u"):
+            fid = fid[:-4]
+        if not re.fullmatch(r"[\w-]{20,}", fid):
+            return PlainTextResponse("Bad id", status_code=400)
+        body = "#EXTM3U\n#EXTINF:-1,CineTuneGame AI Hub\nhttps://drive.usercontent.google.com/download?id=" + fid + "&export=download&confirm=t\n"
+        return Response(body, media_type="audio/x-mpegurl", headers={"Content-Disposition": 'attachment; filename="CineTuneGame.m3u"', "X-Content-Type-Options": "nosniff"})
 
     _STREAM_LIMIT = int(float(os.environ.get("STREAM_MONTH_GB", "70")) * 1024**3)
 
@@ -5231,6 +5253,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         Route("/v/{fid}", player_page, methods=["GET"]),
         Route("/a/{fid}", player_page, methods=["GET"]),
         Route("/s/{fid}", stream_media, methods=["GET"]),
+        Route("/pl/{fid}", playlist, methods=["GET"]),
         Route("/", health, methods=["GET"]),
         Route(f"/{BOT_TOKEN}", telegram_webhook, methods=["POST"]),
     ])
