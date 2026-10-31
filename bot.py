@@ -794,15 +794,39 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui10"
+BOT_VERSION = "2026-10-31-ui11"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
-try:
-    import imageio_ffmpeg as _iiof
-    _FFMPEG = _iiof.get_ffmpeg_exe()
-except Exception:
-    _FFMPEG = None
-_TU = TRANSCODE_URL or ("/rt" if _FFMPEG else "")
+_FFMPEG = None
+_FF_ERR = ""
+
+def _find_ffmpeg():
+    global _FFMPEG, _FF_ERR
+    try:
+        import imageio_ffmpeg as _iiof
+        _FFMPEG = _iiof.get_ffmpeg_exe()
+        return
+    except Exception as e:
+        _FF_ERR = "import: " + str(e)[:80]
+    try:
+        import subprocess as _sp, sys as _sys, shutil as _sh
+        if _sh.which("ffmpeg"):
+            _FFMPEG = _sh.which("ffmpeg")
+            return
+        _sp.run([_sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "imageio-ffmpeg"],
+                timeout=240, capture_output=True)
+        import importlib
+        _iiof = importlib.import_module("imageio_ffmpeg")
+        _FFMPEG = _iiof.get_ffmpeg_exe()
+        _FF_ERR = ""
+    except Exception as e:
+        _FF_ERR = "install: " + str(e)[:80]
+
+import threading as _thr
+_thr.Thread(target=_find_ffmpeg, daemon=True).start()
+
+def _get_tu():
+    return TRANSCODE_URL or ("/rt" if _FFMPEG else "")
 
 def _norm_order(n):
     if not isinstance(n, dict):
@@ -4109,7 +4133,7 @@ async def sortall_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    await update.message.reply_text(f"🤖 বট ভার্সন: {BOT_VERSION}")
+    await update.message.reply_text(f"🤖 বট ভার্সন: {BOT_VERSION}\nffmpeg: {_FFMPEG or ('NO ' + _FF_ERR)}")
 
 def _shape(node):
     if not isinstance(node, dict) or not node:
@@ -5046,7 +5070,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                    '<div id="ap"><div id="disc">\U0001F3B5</div><button id="pb">\u25b6</button>'
                    '<input id="sk" type="range" min="0" max="1000" value="0"><div id="tm">0:00 / 0:00</div></div>')
         else:
-            if _TU:
+            if _get_tu():
                 tag = ('<video id="m" playsinline preload="auto"></video>'
                        '<div id="vc"><button id="vb">-10</button><button id="vp">\u23f8</button><button id="vf">+10</button>'
                        '<input id="vs" type="range" min="0" max="1000" value="0"><span id="vt">0:00</span><button id="vz">\u26f6</button></div>')
@@ -5080,7 +5104,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                '#sk{width:100%;max-width:520px;height:40px}#tm{font-size:20px}'
                '#hud{display:none;position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:7;background:rgba(0,0,0,.7);'
                'padding:10px 18px;border-radius:12px;font-size:22px}')
-        _pre = "var FID=%s,TU=%s,TK=%s,FB=%s,EXT=%s;" % (json.dumps(fid), json.dumps(_TU if not is_audio else ""), json.dumps(_tk), json.dumps(src), json.dumps(ext_src))
+        _pre = "var FID=%s,TU=%s,TK=%s,FB=%s,EXT=%s;" % (json.dumps(fid), json.dumps(_get_tu() if not is_audio else ""), json.dumps(_tk), json.dumps(src), json.dumps(ext_src))
         js = _pre + ('var m=document.getElementById("m"),hud=document.getElementById("hud"),br=1,ht=0;'
               'var A=/Android/i.test(navigator.userAgent),I=/iPhone|iPad|iPod/i.test(navigator.userAgent);'
               'function vlc(){if(A)location.href=%s;else if(I)location.href=%s;else{location.href="/pl/"+FID+".m3u%s";show("Open the downloaded file with VLC")}}'
@@ -5090,7 +5114,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'if(e1)e1.onclick=function(e){e.preventDefault();vlc()};if(e2)e2.onclick=function(e){e.preventDefault();mx()};'
               'var spb=document.getElementById("sp");if(spb)spb.onclick=function(e){e.preventDefault();var o=[0.5,0.75,1,1.25,1.5,2,3],i=o.indexOf(sp);setsp(o[(i+1)%%o.length])};'
               'function show(t){hud.textContent=t;hud.style.display="block";clearTimeout(ht);ht=setTimeout(function(){hud.style.display="none"},900)}'
-              'var dis=false,probing=false;function fail(){if(dis)return;document.getElementById("err").style.display="block";var w=document.getElementById("why");if(w&&!w.textContent){try{fetch(FB,{headers:{Range:"bytes=0-0"}}).then(function(r){return r.text().then(function(t){w.textContent="Server: "+r.status+" "+t.slice(0,90)})}).catch(function(x){w.textContent="Server unreachable"})}catch(x){}}}'
+              'var TU0=TU,dbg="";var dis=false,probing=false;function fail(){if(dis)return;document.getElementById("err").style.display="block";var w=document.getElementById("why");if(w&&!w.textContent){try{fetch(FB,{headers:{Range:"bytes=0-0"}}).then(function(r){return r.text().then(function(t){w.textContent="TU="+(TU0||"none")+" | "+dbg+" | Server: "+r.status})}).catch(function(x){w.textContent="Server unreachable"})}catch(x){}}}'
               'var direct=false;function goDirect(){direct=true;probing=false;TU="";var v=document.getElementById("vc");if(v)v.style.display="none";m.controls=m.tagName==="VIDEO";m.src=EXT;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
               'm.addEventListener("error",function(){if(probing)return;if(!direct&&!G){goDirect();return}dis=false;fail()});'
               'var lpe=document.getElementById("lp");function lps(){lpe.style.display="block"}function lph(){lpe.style.display="none"}'
@@ -5166,7 +5190,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'm.addEventListener("timeupdate",function(){if(dur){vs.value=cur()/dur*1000;vt.textContent=f(cur())+" / "+f(dur)}});'
               'vs.oninput=function(){vt.textContent=f(vs.value/1000*dur)+" / "+f(dur)};vs.onchange=function(){ld(vs.value/1000*dur)};'
               'vc.style.display="none";probing=true;m.src=FB;var tmo=setTimeout(function(){if(probing)useFB()},25000);'
-              'fetch(TU+"/info/"+FID+"?k="+TK).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){clearTimeout(tmo);if(fbd)return;dur=j.duration||0;if(!dur||j.copy===false||j.rt===false)throw 0;probing=false;vc.style.display="flex";ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
+              'fetch(TU+"/info/"+FID+"?k="+TK).then(function(r){if(!r.ok){dbg="probe HTTP "+r.status;throw 0}return r.json()}).then(function(j){clearTimeout(tmo);dbg="probe "+JSON.stringify(j);if(fbd)return;dur=j.duration||0;if(!dur||j.copy===false||j.rt===false)throw 0;probing=false;vc.style.display="flex";ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
               ) % (
               json.dumps(vlc_android), json.dumps(vlc_ios), "", json.dumps(mx_android))
         page = ('<!doctype html><html><head><meta charset="utf-8">'
