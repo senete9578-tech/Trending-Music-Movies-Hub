@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui8"
+BOT_VERSION = "2026-10-31-ui9"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 try:
@@ -1102,6 +1102,18 @@ async def add_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"{t(uid, status_key)}\n{t(uid, 'title_label')} {existing_title}\n{t(uid, 'quality_label')} {quality}"
     )
+
+async def streamstat_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/streamstat — এই মাসে সার্ভার দিয়ে কত GB গেছে; /streamstat reset — গণনা শূন্য"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    st = bot_settings.setdefault("stream_used", {})
+    arg = ((update.message.text or "").split(" ", 1) + [""])[1].strip().lower()
+    if arg == "reset":
+        st.clear(); st["m"] = datetime.now(timezone.utc).strftime("%Y-%m"); st["b"] = 0
+        _save_settings()
+    lim = float(os.environ.get("STREAM_MONTH_GB", "70"))
+    await update.message.reply_text(f"Stream used: {st.get('b', 0) / 1024**3:.1f} GB / {lim:.0f} GB ({st.get('m', '-')})\n/streamstat reset")
 
 async def addgame_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/addgame Title | Label | Size | Link   (যেমন: /addgame My Game | PC | 4 GB | লিংক)"""
@@ -4569,7 +4581,7 @@ _PW_DEFAULT_HASH = "1535e14945f34b5c65421cf88cdcb40a13a9ec1fed15ac5b366c74e51550
 OWNER_PW_MAX = 3          # নন-অ্যাডমিন সর্বোচ্চ কতবার পাসওয়ার্ড কাজ করবে
 OWNER_PHOTO_TTL = 15      # সেকেন্ড পর ছবি মুছবে
 _ADMIN_CMDS = {
-    "add", "addseries", "addmovie", "rename", "migrate", "moveepisode", "removeepisode", "remove", "list", "stats",
+    "streamstat", "add", "addseries", "addmovie", "rename", "migrate", "moveepisode", "removeepisode", "remove", "list", "stats",
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
@@ -5068,7 +5080,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                '#sk{width:100%;max-width:520px;height:40px}#tm{font-size:20px}'
                '#hud{display:none;position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:7;background:rgba(0,0,0,.7);'
                'padding:10px 18px;border-radius:12px;font-size:22px}')
-        _pre = "var FID=%s,TU=%s,TK=%s,FB=%s;" % (json.dumps(fid), json.dumps(_TU if not is_audio else ""), json.dumps(_tk), json.dumps(src))
+        _pre = "var FID=%s,TU=%s,TK=%s,FB=%s,EXT=%s;" % (json.dumps(fid), json.dumps(_TU if not is_audio else ""), json.dumps(_tk), json.dumps(src), json.dumps(ext_src))
         js = _pre + ('var m=document.getElementById("m"),hud=document.getElementById("hud"),br=1,ht=0;'
               'var A=/Android/i.test(navigator.userAgent),I=/iPhone|iPad|iPod/i.test(navigator.userAgent);'
               'function vlc(){if(A)location.href=%s;else if(I)location.href=%s;else{location.href="/pl/"+FID+".m3u%s";show("Open the downloaded file with VLC")}}'
@@ -5078,8 +5090,9 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'if(e1)e1.onclick=function(e){e.preventDefault();vlc()};if(e2)e2.onclick=function(e){e.preventDefault();mx()};'
               'var spb=document.getElementById("sp");if(spb)spb.onclick=function(e){e.preventDefault();var o=[0.5,0.75,1,1.25,1.5,2,3],i=o.indexOf(sp);setsp(o[(i+1)%%o.length])};'
               'function show(t){hud.textContent=t;hud.style.display="block";clearTimeout(ht);ht=setTimeout(function(){hud.style.display="none"},900)}'
-              'var dis=false,probing=false;function fail(){if(dis)return;document.getElementById("err").style.display="block"}'
-              'm.addEventListener("error",function(){if(probing)return;dis=false;fail()});'
+              'var dis=false,probing=false;function fail(){if(dis)return;document.getElementById("err").style.display="block";var w=document.getElementById("why");if(w&&!w.textContent){try{fetch(FB,{headers:{Range:"bytes=0-0"}}).then(function(r){return r.text().then(function(t){w.textContent="Server: "+r.status+" "+t.slice(0,90)})}).catch(function(x){w.textContent="Server unreachable"})}catch(x){}}}'
+              'var direct=false;function goDirect(){direct=true;probing=false;TU="";var v=document.getElementById("vc");if(v)v.style.display="none";m.controls=m.tagName==="VIDEO";m.src=EXT;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
+              'm.addEventListener("error",function(){if(probing)return;if(!direct&&!G){goDirect();return}dis=false;fail()});'
               'var lpe=document.getElementById("lp");function lps(){lpe.style.display="block"}function lph(){lpe.style.display="none"}'
               'm.addEventListener("loadstart",lps);m.addEventListener("waiting",lps);m.addEventListener("playing",lph);m.addEventListener("canplay",lph);lps();'
               'document.getElementById("cx").onclick=function(e){e.preventDefault();dis=true;document.getElementById("err").style.display="none"};'
@@ -5168,7 +5181,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                 +
                 '<div id="hud"></div>'
                 f'<div id="err">⚠️ This file format is not supported in the browser.<br>Open it in a video player or download it:<br>'
-                f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a><br><a id="cx" href="#" style="background:#444">Cancel</a></div>'
+                f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a><br><a id="cx" href="#" style="background:#444">Cancel</a><div id="why" style="font-size:13px;color:#aaa;margin-top:8px"></div></div>'
                 '<div id="lp">Loading...</div>'
                 f'<script>{js}</script></body></html>')
         return HTMLResponse(page, headers={"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"})
@@ -5668,6 +5681,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("wa", wa_cmd))
     application.add_handler(CommandHandler("cast", cast_cmd))
     application.add_handler(CommandHandler("addgame", addgame_cmd))
+    application.add_handler(CommandHandler("streamstat", streamstat_cmd))
     application.add_handler(CommandHandler("postall", post_all))
     application.add_handler(CommandHandler("stoppost", stop_post))
     application.add_handler(CommandHandler("repostall", repost_all))
