@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui13"
+BOT_VERSION = "2026-10-31-ui14"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 _FFMPEG = None
@@ -5292,6 +5292,32 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
 
     _rt_cur = {"stop": None}
 
+    async def _drive_open(client, fid, rng=None):
+        """Drive থেকে ফাইল খোলে; 'virus scan warning' পাতা এলে তার ফর্ম থেকে confirm টোকেন নিয়ে আবার চেষ্টা করে"""
+        hdr = {"Range": rng} if rng else {}
+        ok = lambda x: x.status_code < 400 and "text/html" not in x.headers.get("content-type", "")
+        r = await client.send(client.build_request("GET", _rt_src(fid), headers=hdr), stream=True)
+        if ok(r):
+            return r
+        try:
+            body = (await r.aread()).decode("utf-8", "ignore")
+        except Exception:
+            body = ""
+        finally:
+            await r.aclose()
+        params = dict(re.findall(r'name="(\w+)"\s+value="([^"]*)"', body))
+        if not params.get("id"):
+            r = await client.send(client.build_request("GET", _rt_src(fid)), stream=True)
+            if ok(r):
+                return r
+            await r.aclose()
+            return None
+        r2 = await client.send(client.build_request("GET", "https://drive.usercontent.google.com/download", params=params, headers=hdr), stream=True)
+        if ok(r2):
+            return r2
+        await r2.aclose()
+        return None
+
     async def rt_stream(request: Request) -> Response:
         import httpx
         from starlette.responses import StreamingResponse
@@ -5324,10 +5350,10 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
         p = None
         try:
-            r = await client.send(client.build_request("GET", _rt_src(fid)), stream=True)
-            if r.status_code >= 400 or "text/html" in r.headers.get("content-type", ""):
-                await r.aclose(); await client.aclose()
-                return PlainTextResponse("drive blocked " + str(r.status_code), status_code=502)
+            r = await _drive_open(client, fid, "bytes=0-")
+            if r is None:
+                await client.aclose()
+                return PlainTextResponse("drive blocked (warning page)", status_code=502)
             cmd = [_FFMPEG, "-v", "error", "-nostdin"] + (["-ss", str(ss)] if ss > 0 else []) + [
                 "-i", "pipe:0", "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
                 "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-sn", "-dn",
