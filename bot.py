@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui11"
+BOT_VERSION = "2026-10-31-ui12"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 _FFMPEG = None
@@ -5221,24 +5221,55 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         return f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t"
 
     async def _rt_probe(fid):
+        """ফাইলের শুরুর ~6MB নিজে এনে ffmpeg-কে stdin-এ দেয় (ffmpeg নিজে HTTPS ধরে না)"""
         if fid in _rt_info:
             return _rt_info[fid]
+        import httpx
+        client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=40.0))
+        p = None
         try:
-            p = await asyncio.create_subprocess_exec(_FFMPEG, "-hide_banner", "-i", _rt_src(fid),
-                                                     stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-            _, err = await asyncio.wait_for(p.communicate(), 45)
-        except Exception:
-            try:
-                p.kill()
-            except Exception:
-                pass
-            return {}
+            r = await client.send(client.build_request("GET", _rt_src(fid), headers={"Range": "bytes=0-6291455"}), stream=True)
+            if r.status_code >= 400 or "text/html" in r.headers.get("content-type", ""):
+                await r.aclose()
+                return {"err": f"drive {r.status_code}"}
+            p = await asyncio.create_subprocess_exec(_FFMPEG, "-hide_banner", "-probesize", "5M", "-i", "pipe:0",
+                                                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.DEVNULL,
+                                                     stderr=asyncio.subprocess.PIPE)
+            async def feed():
+                try:
+                    n = 0
+                    async for chunk in r.aiter_raw(65536):
+                        n += len(chunk)
+                        p.stdin.write(chunk)
+                        await p.stdin.drain()
+                        if n >= 6291456:
+                            break
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        p.stdin.close()
+                    except Exception:
+                        pass
+            ft = asyncio.ensure_future(feed())
+            err = await asyncio.wait_for(p.stderr.read(), 40)
+            ft.cancel()
+            await r.aclose()
+        except Exception as e:
+            return {"err": "probe " + type(e).__name__}
+        finally:
+            await client.aclose()
+            if p is not None:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
         t = err.decode("utf-8", "ignore")
         m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", t)
         if not m:
-            return {}
+            return {"err": "no duration", "ff": t[-120:]}
         dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
-        v = re.search(r"Video:\s*([a-z0-9_]+)[^\n]*?(yuv\w+)?", t)
+        v = re.search(r"Video:\s*([a-z0-9_]+)", t)
         vc = v.group(1) if v else ""
         pix = re.search(r"Video:[^\n]*?(yuv\w+|gbr\w+|nv\d+)", t)
         copy = vc == "h264" and (not pix or pix.group(1) in ("yuv420p", "yuvj420p", "nv12"))
@@ -5246,9 +5277,9 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         ac = am.group(1) if am else ""
         mkv = "matroska" in (t.split("Input #0", 1) + [""])[1][:80]
         rt = mkv or ac not in ("aac", "mp3", "opus", "vorbis", "flac", "")
-        r = {"duration": dur, "copy": bool(copy), "rt": bool(rt), "acodec": ac}
-        _rt_info[fid] = r
-        return r
+        r2 = {"duration": dur, "copy": bool(copy), "rt": bool(rt), "acodec": ac, "vcodec": vc}
+        _rt_info[fid] = r2
+        return r2
 
     async def rt_info(request: Request) -> Response:
         from starlette.responses import JSONResponse
@@ -5258,6 +5289,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         return JSONResponse(await _rt_probe(fid), headers={"Cache-Control": "no-store"})
 
     async def rt_stream(request: Request) -> Response:
+        import httpx
         from starlette.responses import StreamingResponse
         fid = request.path_params["fid"]
         if not _FFMPEG or not _rt_ok(fid, request.query_params.get("k")):
@@ -5273,20 +5305,46 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         except ValueError:
             ss = 0.0
         inf = await _rt_probe(fid)
-        if not inf or not inf.get("copy"):
+        if not inf.get("duration") or not inf.get("copy"):
             return PlainTextResponse("unsupported", status_code=415)
         if _rt_sem.locked():
             return PlainTextResponse("busy", status_code=503)
-        cmd = [_FFMPEG, "-v", "error", "-nostdin"] + (["-ss", str(ss)] if ss > 0 else []) + [
-            "-i", _rt_src(fid), "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
-            "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-sn", "-dn",
-            "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"]
         await _rt_sem.acquire()
+        client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
         try:
-            p = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            r = await client.send(client.build_request("GET", _rt_src(fid)), stream=True)
+            if r.status_code >= 400 or "text/html" in r.headers.get("content-type", ""):
+                await r.aclose(); await client.aclose(); _rt_sem.release()
+                return PlainTextResponse("drive blocked", status_code=502)
+            cmd = [_FFMPEG, "-v", "error", "-nostdin"] + (["-ss", str(ss)] if ss > 0 else []) + [
+                "-i", "pipe:0", "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
+                "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-sn", "-dn",
+                "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"]
+            p = await asyncio.create_subprocess_exec(*cmd, stdin=asyncio.subprocess.PIPE,
+                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         except Exception:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
             _rt_sem.release()
             return PlainTextResponse("error", status_code=500)
+
+        async def pump():
+            try:
+                async for chunk in r.aiter_raw(65536):
+                    st["b"] = st.get("b", 0) + len(chunk)
+                    p.stdin.write(chunk)
+                    await p.stdin.drain()
+            except Exception:
+                pass
+            finally:
+                try:
+                    p.stdin.close()
+                except Exception:
+                    pass
+
+        pt = asyncio.ensure_future(pump())
 
         async def gen():
             try:
@@ -5294,11 +5352,15 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                     b = await p.stdout.read(65536)
                     if not b:
                         break
-                    st["b"] = st.get("b", 0) + len(b)
                     yield b
             finally:
+                pt.cancel()
                 try:
                     p.kill()
+                except Exception:
+                    pass
+                try:
+                    await r.aclose(); await client.aclose()
                 except Exception:
                     pass
                 _rt_sem.release()
