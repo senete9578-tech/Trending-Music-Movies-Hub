@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui12"
+BOT_VERSION = "2026-10-31-ui13"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 _FFMPEG = None
@@ -5116,7 +5116,9 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'function show(t){hud.textContent=t;hud.style.display="block";clearTimeout(ht);ht=setTimeout(function(){hud.style.display="none"},900)}'
               'var TU0=TU,dbg="";var dis=false,probing=false;function fail(){if(dis)return;document.getElementById("err").style.display="block";var w=document.getElementById("why");if(w&&!w.textContent){try{fetch(FB,{headers:{Range:"bytes=0-0"}}).then(function(r){return r.text().then(function(t){w.textContent="TU="+(TU0||"none")+" | "+dbg+" | Server: "+r.status})}).catch(function(x){w.textContent="Server unreachable"})}catch(x){}}}'
               'var direct=false;function goDirect(){direct=true;probing=false;TU="";var v=document.getElementById("vc");if(v)v.style.display="none";m.controls=m.tagName==="VIDEO";m.src=EXT;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
-              'm.addEventListener("error",function(){if(probing)return;if(!direct&&!G){goDirect();return}dis=false;fail()});'
+              'm.addEventListener("error",function(){if(probing)return;'
+              'if(!direct&&/\\/rt\\/t\\//.test(m.currentSrc||"")){try{var ab=window.AbortController?new AbortController():null;fetch(m.currentSrc,ab?{signal:ab.signal}:{}).then(function(r){return r.ok?"ok":r.text().then(function(t){return r.status+" "+t.slice(0,110)})}).then(function(x){dbg+=" | rt: "+x;if(ab)ab.abort()}).catch(function(){})}catch(x){}}'
+              'if(!direct&&!G){goDirect();return}dis=false;fail()});'
               'var lpe=document.getElementById("lp");function lps(){lpe.style.display="block"}function lph(){lpe.style.display="none"}'
               'm.addEventListener("loadstart",lps);m.addEventListener("waiting",lps);m.addEventListener("playing",lph);m.addEventListener("canplay",lph);lps();'
               'document.getElementById("cx").onclick=function(e){e.preventDefault();dis=true;document.getElementById("err").style.display="none"};'
@@ -5288,6 +5290,8 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
             return PlainTextResponse("forbidden", status_code=403)
         return JSONResponse(await _rt_probe(fid), headers={"Cache-Control": "no-store"})
 
+    _rt_cur = {"stop": None}
+
     async def rt_stream(request: Request) -> Response:
         import httpx
         from starlette.responses import StreamingResponse
@@ -5299,36 +5303,43 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         if st.get("m") != ym:
             st.clear(); st["m"] = ym; st["b"] = 0
         if st.get("b", 0) >= _STREAM_LIMIT:
-            return PlainTextResponse("limit", status_code=503)
+            return PlainTextResponse("limit reached", status_code=503)
         try:
             ss = max(0.0, float(request.query_params.get("ss", "0")))
         except ValueError:
             ss = 0.0
         inf = await _rt_probe(fid)
-        if not inf.get("duration") or not inf.get("copy"):
-            return PlainTextResponse("unsupported", status_code=415)
-        if _rt_sem.locked():
-            return PlainTextResponse("busy", status_code=503)
-        await _rt_sem.acquire()
+        if not inf.get("duration"):
+            return PlainTextResponse("probe failed: " + str(inf.get("err", ""))[:80], status_code=502)
+        if not inf.get("copy"):
+            return PlainTextResponse("unsupported video codec: " + str(inf.get("vcodec", "")), status_code=415)
+        # নতুন অনুরোধ এলে আগেরটা বন্ধ (একসাথে একটাই চলে, আটকে থাকার ভয় নেই)
+        old = _rt_cur.get("stop")
+        _rt_cur["stop"] = None
+        if old:
+            try:
+                old()
+            except Exception:
+                pass
         client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
+        p = None
         try:
             r = await client.send(client.build_request("GET", _rt_src(fid)), stream=True)
             if r.status_code >= 400 or "text/html" in r.headers.get("content-type", ""):
-                await r.aclose(); await client.aclose(); _rt_sem.release()
-                return PlainTextResponse("drive blocked", status_code=502)
+                await r.aclose(); await client.aclose()
+                return PlainTextResponse("drive blocked " + str(r.status_code), status_code=502)
             cmd = [_FFMPEG, "-v", "error", "-nostdin"] + (["-ss", str(ss)] if ss > 0 else []) + [
                 "-i", "pipe:0", "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy",
                 "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-sn", "-dn",
                 "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"]
             p = await asyncio.create_subprocess_exec(*cmd, stdin=asyncio.subprocess.PIPE,
-                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-        except Exception:
+                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        except Exception as e:
             try:
                 await client.aclose()
             except Exception:
                 pass
-            _rt_sem.release()
-            return PlainTextResponse("error", status_code=500)
+            return PlainTextResponse("start error " + type(e).__name__, status_code=500)
 
         async def pump():
             try:
@@ -5346,24 +5357,50 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
 
         pt = asyncio.ensure_future(pump())
 
+        async def _close():
+            try:
+                await r.aclose(); await client.aclose()
+            except Exception:
+                pass
+
+        def stop():
+            try:
+                pt.cancel()
+            except Exception:
+                pass
+            try:
+                p.kill()
+            except Exception:
+                pass
+            asyncio.ensure_future(_close())
+
+        _rt_cur["stop"] = stop
+        try:
+            first = await asyncio.wait_for(p.stdout.read(65536), 120)
+        except Exception:
+            first = b""
+        if not first:
+            try:
+                tail = (await asyncio.wait_for(p.stderr.read(400), 3)).decode("utf-8", "ignore")
+            except Exception:
+                tail = ""
+            stop()
+            if _rt_cur.get("stop") is stop:
+                _rt_cur["stop"] = None
+            return PlainTextResponse("ffmpeg failed: " + tail[-160:], status_code=500)
+
         async def gen():
             try:
+                yield first
                 while True:
                     b = await p.stdout.read(65536)
                     if not b:
                         break
                     yield b
             finally:
-                pt.cancel()
-                try:
-                    p.kill()
-                except Exception:
-                    pass
-                try:
-                    await r.aclose(); await client.aclose()
-                except Exception:
-                    pass
-                _rt_sem.release()
+                if _rt_cur.get("stop") is stop:
+                    _rt_cur["stop"] = None
+                stop()
                 try:
                     _save_settings()
                 except Exception:
