@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui7"
+BOT_VERSION = "2026-10-31-ui8"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 try:
@@ -5052,6 +5052,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                '#menu{position:fixed;right:8px;top:8px;z-index:8;display:none;flex-direction:column;gap:6px;opacity:0;transition:opacity .3s ease}'
                '#menu a{min-width:200px;box-sizing:border-box;padding:10px 14px;background:rgba(20,20,20,.92);color:#fff;border-radius:12px;text-decoration:none;font-size:15px}'
                '#tb a{font-size:14px;padding:8px 9px}#tb{flex-wrap:wrap}'
+               '#lp{display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;background:rgba(0,0,0,.6);padding:10px 18px;border-radius:20px;font-size:16px;pointer-events:none}'
                '#gs{position:fixed;left:0;right:0;top:0;bottom:70px;z-index:3;touch-action:none}'
                '#intro{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.92);opacity:0;transition:opacity .6s ease;pointer-events:none;display:none;font-size:20px;font-weight:600;text-align:center}'
                '#intro div{position:absolute;opacity:0;transform:translateY(12px);transition:opacity .6s ease,transform .6s ease;line-height:1.6}#intro.on div{opacity:1;transform:none}'
@@ -5077,8 +5078,11 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'if(e1)e1.onclick=function(e){e.preventDefault();vlc()};if(e2)e2.onclick=function(e){e.preventDefault();mx()};'
               'var spb=document.getElementById("sp");if(spb)spb.onclick=function(e){e.preventDefault();var o=[0.5,0.75,1,1.25,1.5,2,3],i=o.indexOf(sp);setsp(o[(i+1)%%o.length])};'
               'function show(t){hud.textContent=t;hud.style.display="block";clearTimeout(ht);ht=setTimeout(function(){hud.style.display="none"},900)}'
-              'function fail(){document.getElementById("err").style.display="block"}'
-              'm.addEventListener("error",fail);'
+              'var dis=false,probing=false;function fail(){if(dis)return;document.getElementById("err").style.display="block"}'
+              'm.addEventListener("error",function(){if(probing)return;dis=false;fail()});'
+              'var lpe=document.getElementById("lp");function lps(){lpe.style.display="block"}function lph(){lpe.style.display="none"}'
+              'm.addEventListener("loadstart",lps);m.addEventListener("waiting",lps);m.addEventListener("playing",lph);m.addEventListener("canplay",lph);lps();'
+              'document.getElementById("cx").onclick=function(e){e.preventDefault();dis=true;document.getElementById("err").style.display="none"};'
               'm.addEventListener("loadedmetadata",function(){if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}'
               'if(!TU&&m.tagName==="VIDEO")setTimeout(function(){if(m.videoWidth===0)fail()},3500)});'
               'var G=null,lv=1,sp=1;function gain(){if(G!==null)return;try{var C=window.AudioContext||window.webkitAudioContext,c=new C();'
@@ -5114,7 +5118,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'm.addEventListener("timeupdate",function(){if(m.duration){sk.value=m.currentTime/m.duration*1000;tm.textContent=f(m.currentTime)+" / "+f(m.duration)}});'
               'sk.oninput=function(){if(m.duration)m.currentTime=sk.value/1000*m.duration}}'
               'document.addEventListener("dblclick",function(){if(m.requestFullscreen)m.requestFullscreen()});'
-              'var lt=0,st=0;setInterval(function(){if(m.paused||m.ended||document.hidden||G===undefined){st=0;return}if(Math.abs(m.currentTime-lt)<0.05){st++;if(st>=10&&(TU||!m.controls||m.controls))fail()}else{st=0;document.getElementById("err").style.display="none"}lt=m.currentTime},1500);'
+              'var lt=-1,st=0,played=false;m.addEventListener("playing",function(){played=true});setInterval(function(){if(m.paused||m.ended||document.hidden){st=0;return}if(Math.abs(m.currentTime-lt)<0.05){st++;if(st>=(played?12:28))fail()}else{st=0;document.getElementById("err").style.display="none"}lt=m.currentTime},1500);'
               'var up=false,bg=true;try{if(localStorage.getItem("bg")==="0")bg=false}catch(x){}'
               'function g(i){return document.getElementById(i)}'
               'function tog(){gain();if(m.paused){up=false;m.play()}else{up=true;m.pause()}}'
@@ -5141,15 +5145,15 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'if(vc&&TU){var off=0,dur=0,vp=document.getElementById("vp"),vs=document.getElementById("vs"),vt=document.getElementById("vt");'
               'function cur(){return off+(m.currentTime||0)}'
               'function ld(t){off=Math.max(0,dur?Math.min(t,dur-2):t);m.src=TU+"/t/"+FID+"?k="+TK+"&ss="+off;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
-              'var fbd=false;function useFB(){if(fbd)return;fbd=true;TU="";vc.style.display="none";m.controls=true;m.src=FB;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
+              'var fbd=false;function useFB(){if(fbd)return;fbd=true;probing=false;TU="";vc.style.display="none";m.controls=true;if(m.getAttribute("src")!==FB)m.src=FB;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
               'vp.onclick=tog;'
               'm.addEventListener("play",function(){vp.textContent="\u23f8"});m.addEventListener("pause",function(){vp.textContent="\u25b6"});'
               'document.getElementById("vb").onclick=function(){ld(cur()-10)};document.getElementById("vf").onclick=function(){ld(cur()+10)};'
               'document.getElementById("vz").onclick=function(){var d=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else if(d.requestFullscreen)d.requestFullscreen()};'
               'm.addEventListener("timeupdate",function(){if(dur){vs.value=cur()/dur*1000;vt.textContent=f(cur())+" / "+f(dur)}});'
               'vs.oninput=function(){vt.textContent=f(vs.value/1000*dur)+" / "+f(dur)};vs.onchange=function(){ld(vs.value/1000*dur)};'
-              'var ac=window.AbortController?new AbortController():null,tmo=setTimeout(function(){if(ac)ac.abort();useFB()},7000);'
-              'fetch(TU+"/info/"+FID+"?k="+TK,ac?{signal:ac.signal}:{}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){clearTimeout(tmo);dur=j.duration||0;if(!dur||j.copy===false||j.rt===false)throw 0;if(!fbd)ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
+              'vc.style.display="none";probing=true;m.src=FB;var tmo=setTimeout(function(){if(probing)useFB()},25000);'
+              'fetch(TU+"/info/"+FID+"?k="+TK).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){clearTimeout(tmo);if(fbd)return;dur=j.duration||0;if(!dur||j.copy===false||j.rt===false)throw 0;probing=false;vc.style.display="flex";ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
               ) % (
               json.dumps(vlc_android), json.dumps(vlc_ios), "", json.dumps(mx_android))
         page = ('<!doctype html><html><head><meta charset="utf-8">'
@@ -5164,7 +5168,8 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                 +
                 '<div id="hud"></div>'
                 f'<div id="err">⚠️ This file format is not supported in the browser.<br>Open it in a video player or download it:<br>'
-                f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a></div>'
+                f'<a id="vlc2" href="#">▶ Open in VLC</a><a id="mx2" href="#">▶ MX Player</a><a href="{dl_src}">⬇️ Download</a><br><a id="cx" href="#" style="background:#444">Cancel</a></div>'
+                '<div id="lp">Loading...</div>'
                 f'<script>{js}</script></body></html>')
         return HTMLResponse(page, headers={"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"})
 
