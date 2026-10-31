@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui14"
+BOT_VERSION = "2026-10-31-ui15"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 _FFMPEG = None
@@ -5104,7 +5104,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                '#sk{width:100%;max-width:520px;height:40px}#tm{font-size:20px}'
                '#hud{display:none;position:fixed;top:40%;left:50%;transform:translateX(-50%);z-index:7;background:rgba(0,0,0,.7);'
                'padding:10px 18px;border-radius:12px;font-size:22px}')
-        _pre = "var FID=%s,TU=%s,TK=%s,FB=%s,EXT=%s;" % (json.dumps(fid), json.dumps(_get_tu() if not is_audio else ""), json.dumps(_tk), json.dumps(src), json.dumps(ext_src))
+        _pre = "var FID=%s,TU=%s,TK=%s,FB=%s,EXT=%s;var xo=false,stg=\"fb\",tried={};if(TU)stg=\"ext\";" % (json.dumps(fid), json.dumps(_get_tu() if not is_audio else ""), json.dumps(_tk), json.dumps(src), json.dumps(ext_src))
         js = _pre + ('var m=document.getElementById("m"),hud=document.getElementById("hud"),br=1,ht=0;'
               'var A=/Android/i.test(navigator.userAgent),I=/iPhone|iPad|iPod/i.test(navigator.userAgent);'
               'function vlc(){if(A)location.href=%s;else if(I)location.href=%s;else{location.href="/pl/"+FID+".m3u%s";show("Open the downloaded file with VLC")}}'
@@ -5115,16 +5115,16 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'var spb=document.getElementById("sp");if(spb)spb.onclick=function(e){e.preventDefault();var o=[0.5,0.75,1,1.25,1.5,2,3],i=o.indexOf(sp);setsp(o[(i+1)%%o.length])};'
               'function show(t){hud.textContent=t;hud.style.display="block";clearTimeout(ht);ht=setTimeout(function(){hud.style.display="none"},900)}'
               'var TU0=TU,dbg="";var dis=false,probing=false;function fail(){if(dis)return;document.getElementById("err").style.display="block";var w=document.getElementById("why");if(w&&!w.textContent){try{fetch(FB,{headers:{Range:"bytes=0-0"}}).then(function(r){return r.text().then(function(t){w.textContent="TU="+(TU0||"none")+" | "+dbg+" | Server: "+r.status})}).catch(function(x){w.textContent="Server unreachable"})}catch(x){}}}'
-              'var direct=false;function goDirect(){direct=true;probing=false;TU="";var v=document.getElementById("vc");if(v)v.style.display="none";m.controls=m.tagName==="VIDEO";m.src=EXT;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
+              'function nextSrc(){tried[stg]=1;if(G)tried.ext=1;var o=["ext","fb"];for(var i=0;i<o.length;i++){if(!tried[o[i]]){stg=o[i];xo=stg==="ext";TU="";var v=document.getElementById("vc");if(v)v.style.display="none";m.controls=m.tagName==="VIDEO";m.src=stg==="ext"?EXT:FB;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}return true}}return false}'
               'm.addEventListener("error",function(){if(probing)return;'
-              'if(!direct&&/\\/rt\\/t\\//.test(m.currentSrc||"")){try{var ab=window.AbortController?new AbortController():null;fetch(m.currentSrc,ab?{signal:ab.signal}:{}).then(function(r){return r.ok?"ok":r.text().then(function(t){return r.status+" "+t.slice(0,110)})}).then(function(x){dbg+=" | rt: "+x;if(ab)ab.abort()}).catch(function(){})}catch(x){}}'
-              'if(!direct&&!G){goDirect();return}dis=false;fail()});'
+              'if(stg==="rt"&&/\\/rt\\/t\\//.test(m.currentSrc||"")){try{var ab=window.AbortController?new AbortController():null;fetch(m.currentSrc,ab?{signal:ab.signal}:{}).then(function(r){return r.ok?"ok":r.text().then(function(t){return r.status+" "+t.slice(0,110)})}).then(function(x){dbg+=" | rt: "+x;if(ab)ab.abort()}).catch(function(){})}catch(x){}}'
+              'if(nextSrc())return;dis=false;fail()});'
               'var lpe=document.getElementById("lp");function lps(){lpe.style.display="block"}function lph(){lpe.style.display="none"}'
               'm.addEventListener("loadstart",lps);m.addEventListener("waiting",lps);m.addEventListener("playing",lph);m.addEventListener("canplay",lph);lps();'
               'document.getElementById("cx").onclick=function(e){e.preventDefault();dis=true;document.getElementById("err").style.display="none"};'
               'm.addEventListener("loadedmetadata",function(){if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}'
               'if(!TU&&m.tagName==="VIDEO")setTimeout(function(){if(m.videoWidth===0)fail()},3500)});'
-              'var G=null,lv=1,sp=1;function gain(){if(G!==null)return;try{var C=window.AudioContext||window.webkitAudioContext,c=new C();'
+              'var G=null,lv=1,sp=1;function gain(){if(G!==null||xo)return;try{var C=window.AudioContext||window.webkitAudioContext,c=new C();'
               'var sr=c.createMediaElementSource(m);G=c.createGain();var k=c.createDynamicsCompressor();k.threshold.value=-12;k.knee.value=20;k.ratio.value=12;'
               'sr.connect(G);G.connect(k);k.connect(c.destination);window._c=c;G.gain.value=lv<=1?lv:1+(lv-1)*3}catch(x){G=0}}'
               'function setv(x){lv=x;var g=x<=1?x:1+(x-1)*3;if(G){G.gain.value=g;if(window._c&&window._c.state==="suspended")window._c.resume()}else{m.volume=Math.min(1,x)}}'
@@ -5157,7 +5157,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'm.addEventListener("timeupdate",function(){if(m.duration){sk.value=m.currentTime/m.duration*1000;tm.textContent=f(m.currentTime)+" / "+f(m.duration)}});'
               'sk.oninput=function(){if(m.duration)m.currentTime=sk.value/1000*m.duration}}'
               'document.addEventListener("dblclick",function(){if(m.requestFullscreen)m.requestFullscreen()});'
-              'var lt=-1,st=0,played=false;m.addEventListener("playing",function(){played=true});setInterval(function(){if(m.paused||m.ended||document.hidden){st=0;return}if(Math.abs(m.currentTime-lt)<0.05){st++;if(st>=(played?12:28))fail()}else{st=0;document.getElementById("err").style.display="none"}lt=m.currentTime},1500);'
+              'var lt=-1,st=0,played=false;m.addEventListener("playing",function(){played=true});setInterval(function(){if(m.paused||m.ended||document.hidden){st=0;return}if(Math.abs(m.currentTime-lt)<0.05){st++;if(st>=(played?12:28)){if(!played&&nextSrc())st=0;else fail()}}else{st=0;document.getElementById("err").style.display="none"}lt=m.currentTime},1500);'
               'var up=false,bg=true;try{if(localStorage.getItem("bg")==="0")bg=false}catch(x){}'
               'function g(i){return document.getElementById(i)}'
               'function tog(){gain();if(m.paused){up=false;m.play()}else{up=true;m.pause()}}'
@@ -5184,15 +5184,15 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'if(vc&&TU){var off=0,dur=0,vp=document.getElementById("vp"),vs=document.getElementById("vs"),vt=document.getElementById("vt");'
               'function cur(){return off+(m.currentTime||0)}'
               'function ld(t){off=Math.max(0,dur?Math.min(t,dur-2):t);m.src=TU+"/t/"+FID+"?k="+TK+"&ss="+off;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
-              'var fbd=false;function useFB(){if(fbd)return;fbd=true;probing=false;TU="";vc.style.display="none";m.controls=true;if(m.getAttribute("src")!==FB)m.src=FB;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
+              'var fbd=false;function useFB(){if(fbd)return;fbd=true;probing=false;TU="";vc.style.display="none";m.controls=true;if(started){var p=m.play();if(p&&p.catch)p.catch(function(){})}}'
               'vp.onclick=tog;'
               'm.addEventListener("play",function(){vp.textContent="\u23f8"});m.addEventListener("pause",function(){vp.textContent="\u25b6"});'
               'document.getElementById("vb").onclick=function(){ld(cur()-10)};document.getElementById("vf").onclick=function(){ld(cur()+10)};'
               'document.getElementById("vz").onclick=function(){var d=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else if(d.requestFullscreen)d.requestFullscreen()};'
               'm.addEventListener("timeupdate",function(){if(dur){vs.value=cur()/dur*1000;vt.textContent=f(cur())+" / "+f(dur)}});'
               'vs.oninput=function(){vt.textContent=f(vs.value/1000*dur)+" / "+f(dur)};vs.onchange=function(){ld(vs.value/1000*dur)};'
-              'vc.style.display="none";probing=true;m.src=FB;var tmo=setTimeout(function(){if(probing)useFB()},25000);'
-              'fetch(TU+"/info/"+FID+"?k="+TK).then(function(r){if(!r.ok){dbg="probe HTTP "+r.status;throw 0}return r.json()}).then(function(j){clearTimeout(tmo);dbg="probe "+JSON.stringify(j);if(fbd)return;dur=j.duration||0;if(!dur||j.copy===false||j.rt===false)throw 0;probing=false;vc.style.display="flex";ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
+              'vc.style.display="none";probing=true;m.src=EXT;xo=true;var tmo=setTimeout(function(){if(probing)useFB()},25000);'
+              'fetch(TU+"/info/"+FID+"?k="+TK).then(function(r){if(!r.ok){dbg="probe HTTP "+r.status;throw 0}return r.json()}).then(function(j){clearTimeout(tmo);dbg="probe "+JSON.stringify(j);if(fbd)return;dur=j.duration||0;if(!dur||j.copy===false||j.rt===false)throw 0;probing=false;vc.style.display="flex";stg="rt";xo=false;ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
               ) % (
               json.dumps(vlc_android), json.dumps(vlc_ios), "", json.dumps(mx_android))
         page = ('<!doctype html><html><head><meta charset="utf-8">'
@@ -5457,24 +5457,21 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
             st.clear(); st["m"] = ym; st["b"] = 0
         if st.get("b", 0) >= _STREAM_LIMIT:
             return PlainTextResponse("Streaming limit reached this month — please use Download.", status_code=503)
-        hdr = {}
-        if request.headers.get("range"):
-            hdr["Range"] = request.headers["range"]
+        _had_range = bool(request.headers.get("range"))
         client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
         try:
-            r = await client.send(client.build_request(
-                "GET", f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t", headers=hdr), stream=True)
+            r = await _drive_open(client, fid, request.headers.get("range") or "bytes=0-")
         except Exception:
             await client.aclose()
             return PlainTextResponse("Unavailable", status_code=502)
-        ct = r.headers.get("content-type", "")
-        if r.status_code >= 400 or "text/html" in ct:
-            await r.aclose(); await client.aclose()
+        if r is None:
+            await client.aclose()
             return PlainTextResponse("Drive blocked this file (quota/permission). Use Download.", status_code=502)
+        ct = r.headers.get("content-type", "")
         is_audio = request.query_params.get("a") == "1"
         out = {"Accept-Ranges": "bytes", "Cache-Control": "no-store"}
         for h in ("content-length", "content-range"):
-            if r.headers.get(h):
+            if r.headers.get(h) and not (h == "content-range" and not _had_range):
                 out[h] = r.headers[h]
         async def gen():
             try:
@@ -5488,7 +5485,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                 except Exception:
                     pass
         mt = "audio/mpeg" if is_audio else (ct if ct.startswith("video/") else "video/mp4")
-        return StreamingResponse(gen(), status_code=r.status_code, media_type=mt, headers=out)
+        return StreamingResponse(gen(), status_code=(r.status_code if _had_range else 200), media_type=mt, headers=out)
 
     async def download_file(request: Request) -> Response:
         """ডাউনলোড নিজের ডোমেইন থেকে — ব্রাউজারে Google/Drive নাম দেখায় না। সীমা পার হলে সরাসরি লিংকে পাঠায়।"""
