@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-30-ui6"
+BOT_VERSION = "2026-10-31-ui7"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 try:
@@ -5149,7 +5149,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
               'm.addEventListener("timeupdate",function(){if(dur){vs.value=cur()/dur*1000;vt.textContent=f(cur())+" / "+f(dur)}});'
               'vs.oninput=function(){vt.textContent=f(vs.value/1000*dur)+" / "+f(dur)};vs.onchange=function(){ld(vs.value/1000*dur)};'
               'var ac=window.AbortController?new AbortController():null,tmo=setTimeout(function(){if(ac)ac.abort();useFB()},7000);'
-              'fetch(TU+"/info/"+FID+"?k="+TK,ac?{signal:ac.signal}:{}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){clearTimeout(tmo);dur=j.duration||0;if(!dur||j.copy===false)throw 0;if(!fbd)ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
+              'fetch(TU+"/info/"+FID+"?k="+TK,ac?{signal:ac.signal}:{}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){clearTimeout(tmo);dur=j.duration||0;if(!dur||j.copy===false||j.rt===false)throw 0;if(!fbd)ld(0)}).catch(function(){clearTimeout(tmo);useFB()})}'
               ) % (
               json.dumps(vlc_android), json.dumps(vlc_ios), "", json.dumps(mx_android))
         page = ('<!doctype html><html><head><meta charset="utf-8">'
@@ -5200,7 +5200,10 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         vc = v.group(1) if v else ""
         pix = re.search(r"Video:[^\n]*?(yuv\w+|gbr\w+|nv\d+)", t)
         copy = vc == "h264" and (not pix or pix.group(1) in ("yuv420p", "yuvj420p", "nv12"))
-        r = {"duration": dur, "copy": bool(copy)}
+        am = re.search(r"Audio:\s*([a-z0-9_]+)", t)
+        ac = am.group(1) if am else ""
+        rt = ac not in ("aac", "mp3", "opus", "vorbis", "flac", "")
+        r = {"duration": dur, "copy": bool(copy), "rt": bool(rt), "acodec": ac}
         _rt_info[fid] = r
         return r
 
