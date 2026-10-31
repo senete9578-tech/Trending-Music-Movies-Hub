@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui9"
+BOT_VERSION = "2026-10-31-ui10"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 try:
@@ -5220,7 +5220,8 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         copy = vc == "h264" and (not pix or pix.group(1) in ("yuv420p", "yuvj420p", "nv12"))
         am = re.search(r"Audio:\s*([a-z0-9_]+)", t)
         ac = am.group(1) if am else ""
-        rt = ac not in ("aac", "mp3", "opus", "vorbis", "flac", "")
+        mkv = "matroska" in (t.split("Input #0", 1) + [""])[1][:80]
+        rt = mkv or ac not in ("aac", "mp3", "opus", "vorbis", "flac", "")
         r = {"duration": dur, "copy": bool(copy), "rt": bool(rt), "acodec": ac}
         _rt_info[fid] = r
         return r
