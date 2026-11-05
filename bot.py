@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-11-05-audio1"
+BOT_VERSION = "2026-11-05-flash1"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 _FFMPEG = None
@@ -1138,6 +1138,101 @@ async def streamstat_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _save_settings()
     lim = float(os.environ.get("STREAM_MONTH_GB", "70"))
     await update.message.reply_text(f"Stream used: {st.get('b', 0) / 1024**3:.1f} GB / {lim:.0f} GB ({st.get('m', '-')})\n/streamstat reset")
+
+def _flash_merge_dict(dst, src):
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            _flash_merge_dict(dst[k], v)
+        elif k not in dst:
+            dst[k] = v
+
+def _tree_remove_titles(tree, names):
+    removed = 0
+    for key, val in list(tree.items()):
+        if key == "_titles":
+            keep = []
+            for e in val:
+                tname = e.get("title") if isinstance(e, dict) else e
+                if tname in names:
+                    removed += 1
+                else:
+                    keep.append(e)
+            tree["_titles"] = keep
+        elif isinstance(val, dict):
+            removed += _tree_remove_titles(val, names)
+    return removed
+
+def _find_folder_path(name, must_under=None):
+    hits = []
+    def walk(tree, trail):
+        for key, val in tree.items():
+            if key == "_titles" or not isinstance(val, dict):
+                continue
+            if key.lower() == name.lower():
+                hits.append(trail + [key])
+            walk(val, trail + [key])
+    walk(category_tree, [])
+    if not hits:
+        return None
+    if must_under:
+        for h in hits:
+            if must_under.lower() in [x.lower() for x in h[:-1]]:
+                return h
+    return hits[0]
+
+async def flashsetup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/flashsetup — একবার চালালেই: The Flash Hindi -> The Flash-এ মার্জ, পুরনো ফ্ল্যাশ এন্ট্রি সরানো,
+    Main Universe-এ "The Flash" ফোল্ডার (Hindi = Season 1, English = বাকি সিজন)."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    hindi = db.get("The Flash Hindi")
+    if hindi and (not isinstance(hindi, dict) or is_leaf_level(hindi)):
+        await update.message.reply_text("⚠️ 'The Flash Hindi'-এর ফরম্যাট অন্যরকম, কিছু বদলানো হয়নি। এই মেসেজটা আমাকে পাঠান।")
+        return
+
+    merged = False
+    if hindi:
+        db.setdefault("The Flash", {})
+        _flash_merge_dict(db["The Flash"], hindi)
+        merged = True
+    if "The Flash Hindi" in db:
+        del db["The Flash Hindi"]
+    save_state("content", DB_FILE, db)
+
+    flash = db.get("The Flash")
+    if not isinstance(flash, dict) or not flash:
+        await update.message.reply_text("⚠️ 'The Flash' টাইটেল ডাটাবেসে নেই। আগে সিজন যোগ করুন।")
+        return
+
+    def _num(k):
+        m = re.search(r"(\d+)", k)
+        return int(m.group(1)) if m else 0
+    seasons = sorted([k for k in flash if re.search(r"season\s*\d+", k, re.I)], key=_num)
+    hindi_seasons = [k for k in seasons if _num(k) == 1]
+    english_seasons = [k for k in seasons if _num(k) != 1]
+
+    removed = _tree_remove_titles(category_tree, {"The Flash", "The Flash Hindi"})
+
+    main_path = _find_folder_path("Main Universe", must_under="DC Universe") or \
+        ["Hollywood", "DC Comics (DC)", "DC Universe", "Main Universe"]
+    node = category_tree
+    for seg in main_path:
+        node = node.setdefault(seg, {})
+    fnode = node.setdefault("The Flash", {})
+    fnode["Hindi"] = {"_titles": [
+        {"title": "The Flash", "path": [s], "display": f"Season {_num(s)}"} for s in hindi_seasons]}
+    fnode["English"] = {"_titles": [
+        {"title": "The Flash", "path": [s], "display": f"Season {_num(s)}"} for s in english_seasons]}
+    save_state("categories", CATEGORY_FILE, category_tree)
+
+    lines = ["✅ Flash সেটআপ হয়ে গেছে",
+             f"মার্জ: {'হ্যাঁ' if merged else 'না (The Flash Hindi ছিল না)'}",
+             f"পুরনো ক্যাটাগরি এন্ট্রি সরানো: {removed}",
+             f"ফোল্ডার: {' / '.join(main_path)} / The Flash",
+             f"Hindi: {', '.join(f'Season {_num(s)}' for s in hindi_seasons) or '-'}",
+             f"English: {', '.join(f'Season {_num(s)}' for s in english_seasons) or '-'}",
+             "সার্চ 'The Flash' -> একটাই আইটেম। 'The Flash 2023 Hindi' আগের জায়গাতেই আছে।"]
+    await update.message.reply_text("\n".join(lines))
 
 async def addgame_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/addgame Title | Label | Size | Link   (যেমন: /addgame My Game | PC | 4 GB | লিংক)"""
@@ -3538,7 +3633,7 @@ def _card_txt(uid):
     return _CARD_TXT.get(get_lang(uid), _CARD_TXT["en"])
 
 _HD_RE = re.compile(r"\b(hd|720p?|1080p?|1440p?|2160p?)\b|4k", re.I)
-_8D_RE = r"(?<!\w)(8\s*d|৮\s*ডি|8\s*डी)(?!\w)"
+_8D_RE = r"(?<![A-Za-z0-9])(8\s*d|৮\s*ডি|8\s*डी)(?![A-Za-z0-9])"
 _8D_SEARCH_RE = re.compile(_8D_RE, re.I)
 
 def _8d_song_titles():
@@ -4224,7 +4319,7 @@ async def drivelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for path, name, fid in sorted(files, key=lambda x: ("/".join(x[0]).lower(), natural_sort_key(x[1]))):
                 info = parse_drive_name(name)
                 if name.lower().endswith(_AUDIO_EXT):
-                    info["quality"] = ("8D " if re.search(r"(?<!\w)8\s*d(?!\w)", name, re.I) else "") + "192 kbps"
+                    info["quality"] = ("8D " if re.search(r"(?<![A-Za-z0-9])8\s*d(?![A-Za-z0-9])", name, re.I) else "") + "192 kbps"
                     info["series"] = False
                 se = f"{info['season']} {info['episode']}" if info["series"] else "-"
                 inbot = "IN-BOT" if fid in existing else "NEW"
@@ -4295,7 +4390,7 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     continue
                 info = parse_drive_name(name)
                 if name.lower().endswith(_AUDIO_EXT):
-                    info["quality"] = ("8D " if re.search(r"(?<!\w)8\s*d(?!\w)", name, re.I) else "") + "192 kbps"
+                    info["quality"] = ("8D " if re.search(r"(?<![A-Za-z0-9])8\s*d(?![A-Za-z0-9])", name, re.I) else "") + "192 kbps"
                     info["series"] = False
                 key = (info["title"].lower(), info["season"], info["episode"], info["quality"])
                 if key in seen_keys:
@@ -4644,7 +4739,7 @@ _PW_DEFAULT_HASH = "1535e14945f34b5c65421cf88cdcb40a13a9ec1fed15ac5b366c74e51550
 OWNER_PW_MAX = 3          # নন-অ্যাডমিন সর্বোচ্চ কতবার পাসওয়ার্ড কাজ করবে
 OWNER_PHOTO_TTL = 15      # সেকেন্ড পর ছবি মুছবে
 _ADMIN_CMDS = {
-    "streamstat", "add", "addseries", "addmovie", "rename", "migrate", "moveepisode", "removeepisode", "remove", "list", "stats",
+    "streamstat", "flashsetup", "add", "addseries", "addmovie", "rename", "migrate", "moveepisode", "removeepisode", "remove", "list", "stats",
     "broadcast", "setlatest", "setposter", "addcategory", "addtitletocategory", "removecategory", "clearcategories",
     "treestyle", "ai", "autoposter", "categoryafter", "wrapcategory", "buildcategories", "removetitlefromcategory",
     "removelatest", "removeloading", "syncdrive", "exportdb", "drivelist", "sortall", "version", "drivecat", "drivemap",
@@ -5891,6 +5986,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("cast", cast_cmd))
     application.add_handler(CommandHandler("addgame", addgame_cmd))
     application.add_handler(CommandHandler("streamstat", streamstat_cmd))
+    application.add_handler(CommandHandler("flashsetup", flashsetup_cmd))
     application.add_handler(CommandHandler("postall", post_all))
     application.add_handler(CommandHandler("stoppost", stop_post))
     application.add_handler(CommandHandler("repostall", repost_all))
