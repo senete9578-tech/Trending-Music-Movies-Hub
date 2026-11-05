@@ -794,7 +794,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-10-31-ui15"
+BOT_VERSION = "2026-11-05-audio1"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 _FFMPEG = None
@@ -2480,6 +2480,16 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE, raw
     del hist[:-HISTORY_LIMIT]
     save_state("search_history", SEARCH_HISTORY_FILE, user_search_history)
 
+    # --- 8D মিউজিক: "8D music" / "৮ডি মিউজিক" লিখলে 8D গানের তালিকা ---
+    if _8D_SEARCH_RE.search(raw_query):
+        _8d = _8d_song_titles()
+        if _8d:
+            last_search_results[uid] = _8d
+            await update.message.reply_text(f"🎧 8D মিউজিক ({len(_8d)}টি):", reply_markup=build_results_keyboard(_8d, 0))
+        else:
+            await update.message.reply_text("এখনো কোনো 8D মিউজিক যোগ করা হয়নি।")
+        return
+
     # --- হিরো/ডিরেক্টরের নাম দিয়ে সার্চ ---
     try:
         _pt = people_search(raw_query)
@@ -3527,6 +3537,23 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", "MovieSongSearch_bot").strip().lst
 def _card_txt(uid):
     return _CARD_TXT.get(get_lang(uid), _CARD_TXT["en"])
 
+_HD_RE = re.compile(r"\b(hd|720p?|1080p?|1440p?|2160p?)\b|4k", re.I)
+_8D_RE = r"(?<!\w)(8\s*d|৮\s*ডি|8\s*डी)(?!\w)"
+_8D_SEARCH_RE = re.compile(_8D_RE, re.I)
+
+def _8d_song_titles():
+    """8D গান: যেসব গানের কোনো কোয়ালিটিতে বা টাইটেলে 8D লেখা আছে"""
+    out = []
+    for k, v in db.items():
+        if not isinstance(v, dict):
+            continue
+        qs = [q for q in v.keys() if isinstance(q, str)]
+        is_song = any(re.search(r"kbps|mp3|audio", q, re.I) for q in qs)
+        has_8d = any(_8D_SEARCH_RE.search(q) for q in qs) or bool(_8D_SEARCH_RE.search(k))
+        if is_song and has_8d:
+            out.append(k)
+    return out
+
 def _kind_size(title, quality):
     """রিটার্ন (kind, size): kind = movie / song / game"""
     games = (bot_settings.get("games") or {})
@@ -3542,7 +3569,12 @@ def _link_card(uid, label, link, kind="movie", size=None):
     w, d, sh, rp, tap, _ = _card_txt(uid)
     ls = _LISTEN_SIZE.get(get_lang(uid), _LISTEN_SIZE["en"])
     icon = {"movie": "🎬", "song": "🎵", "game": "🎮"}.get(kind, "🎬")
-    caption = f"{icon} {label}\n━━━━━━━━━━━━\n"
+    hd_line = ""
+    if kind == "movie" and _HD_RE.search(str(label)):
+        hd_line = "📺 HD\n"
+    elif kind == "song" and _8D_SEARCH_RE.search(str(label)):
+        hd_line = "🎧 8D\n"
+    caption = f"{icon} {label}\n{hd_line}━━━━━━━━━━━━\n"
     if kind == "game" and size:
         caption += f"{ls[1]}: {size}\n"
     caption += f"{tap}\n\n{t(uid, 'thank_you')}"
@@ -3957,6 +3989,7 @@ import urllib.parse as _urlparse
 import urllib.error as _urlerr
 DRIVE_KEY = os.environ.get("DRIVE_API_KEY", "").strip()
 _VIDEO_EXT = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts")
+_AUDIO_EXT = (".mp3", ".m4a", ".flac", ".wav", ".ogg", ".aac", ".opus", ".wma")
 _CUT = re.compile(r"\b((?:19|20)\d{2}|2160p|1080p|720p|480p|360p|4k|s\d{1,2}[ ._-]*e\d{1,3}|bluray|blu-ray|brrip|bdrip|"
                   r"webrip|web-dl|webdl|hdrip|hdtc|hdcam|dvdrip|remux|hindi|english|dual|multi|org|hevc|x264|x265|10bit|esubs?|v2)\b", re.I)
 
@@ -4014,7 +4047,7 @@ def _drive_scan(root_id, max_folders=600):
                 mt = f.get("mimeType", "")
                 if mt == "application/vnd.google-apps.folder":
                     queue.append((f["id"], path + [f["name"]]))
-                elif mt.startswith("video/") or f["name"].lower().endswith(_VIDEO_EXT):
+                elif mt.startswith("video/") or mt.startswith("audio/") or f["name"].lower().endswith(_VIDEO_EXT + _AUDIO_EXT):
                     files.append((path, f["name"], f["id"]))
             token = data.get("nextPageToken")
             if not token:
@@ -4190,6 +4223,9 @@ async def drivelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             root_name, files = await asyncio.to_thread(_drive_scan, rid)
             for path, name, fid in sorted(files, key=lambda x: ("/".join(x[0]).lower(), natural_sort_key(x[1]))):
                 info = parse_drive_name(name)
+                if name.lower().endswith(_AUDIO_EXT):
+                    info["quality"] = ("8D " if re.search(r"(?<!\w)8\s*d(?!\w)", name, re.I) else "") + "192 kbps"
+                    info["series"] = False
                 se = f"{info['season']} {info['episode']}" if info["series"] else "-"
                 inbot = "IN-BOT" if fid in existing else "NEW"
                 sim = exist_map.get(_norm_title(info["title"], info["series"]), "")
@@ -4258,6 +4294,9 @@ async def sync_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     skipped_old += 1
                     continue
                 info = parse_drive_name(name)
+                if name.lower().endswith(_AUDIO_EXT):
+                    info["quality"] = ("8D " if re.search(r"(?<!\w)8\s*d(?!\w)", name, re.I) else "") + "192 kbps"
+                    info["series"] = False
                 key = (info["title"].lower(), info["season"], info["episode"], info["quality"])
                 if key in seen_keys:
                     dup += 1
@@ -5292,6 +5331,15 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
 
     _rt_cur = {"stop": None}
 
+    def _cap_range(rng, cap=8 * 1024 * 1024):
+        """খোলা-প্রান্তের Range ('bytes=N-') কে ছোট টুকরোয় (৮MB) বদলায় — Google বড় একটানা অনুরোধে ওয়ার্নিং পাতা দেয়"""
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", (rng or "").strip())
+        if not m or not m.group(1):
+            return rng or f"bytes=0-{cap - 1}"
+        a = int(m.group(1))
+        b = int(m.group(2)) if m.group(2) else a + cap - 1
+        return f"bytes={a}-{min(b, a + cap - 1)}"
+
     async def _drive_open(client, fid, rng=None):
         """Drive থেকে ফাইল খোলে; 'virus scan warning' পাতা এলে তার ফর্ম থেকে confirm টোকেন নিয়ে আবার চেষ্টা করে"""
         hdr = {"Range": rng} if rng else {}
@@ -5350,7 +5398,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
         p = None
         try:
-            r = await _drive_open(client, fid, "bytes=0-")
+            r = await _drive_open(client, fid, f"bytes=0-{8 * 1024 * 1024 - 1}")
             if r is None:
                 await client.aclose()
                 return PlainTextResponse("drive blocked (warning page)", status_code=502)
@@ -5368,11 +5416,25 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
             return PlainTextResponse("start error " + type(e).__name__, status_code=500)
 
         async def pump():
+            CH = 8 * 1024 * 1024
+            cur = r
+            off = 0
             try:
-                async for chunk in r.aiter_raw(65536):
-                    st["b"] = st.get("b", 0) + len(chunk)
-                    p.stdin.write(chunk)
-                    await p.stdin.drain()
+                while cur is not None:
+                    n = 0
+                    try:
+                        async for chunk in cur.aiter_raw(65536):
+                            n += len(chunk)
+                            st["b"] = st.get("b", 0) + len(chunk)
+                            p.stdin.write(chunk)
+                            await p.stdin.drain()
+                    finally:
+                        full = cur.status_code == 200
+                        await cur.aclose()
+                    if full or n < CH:
+                        break
+                    off += n
+                    cur = await _drive_open(client, fid, f"bytes={off}-{off + CH - 1}")
             except Exception:
                 pass
             finally:
@@ -5460,7 +5522,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         _had_range = bool(request.headers.get("range"))
         client = httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30.0, read=None))
         try:
-            r = await _drive_open(client, fid, request.headers.get("range") or "bytes=0-")
+            r = await _drive_open(client, fid, _cap_range(request.headers.get("range")))
         except Exception:
             await client.aclose()
             return PlainTextResponse("Unavailable", status_code=502)
@@ -5471,7 +5533,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
         is_audio = request.query_params.get("a") == "1"
         out = {"Accept-Ranges": "bytes", "Cache-Control": "no-store"}
         for h in ("content-length", "content-range"):
-            if r.headers.get(h) and not (h == "content-range" and not _had_range):
+            if r.headers.get(h):
                 out[h] = r.headers[h]
         async def gen():
             try:
@@ -5485,7 +5547,7 @@ async def run_webhook_server(application: Application, base_url: str, port: int)
                 except Exception:
                     pass
         mt = "audio/mpeg" if is_audio else (ct if ct.startswith("video/") else "video/mp4")
-        return StreamingResponse(gen(), status_code=(r.status_code if _had_range else 200), media_type=mt, headers=out)
+        return StreamingResponse(gen(), status_code=r.status_code, media_type=mt, headers=out)
 
     async def download_file(request: Request) -> Response:
         """ডাউনলোড নিজের ডোমেইন থেকে — ব্রাউজারে Google/Drive নাম দেখায় না। সীমা পার হলে সরাসরি লিংকে পাঠায়।"""
