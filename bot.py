@@ -19,7 +19,7 @@ from telegram.ext import (
     ContextTypes, filters, TypeHandler, ApplicationHandlerStop
 )
 
-_SINGLE_ROW_KEEP = ("catnav::", "navback", "catback", "begin", "request", "page::", "reset_")
+_SINGLE_ROW_KEEP = ("catnav::", "navback", "catback", "begin", "request", "page::", "reset_", "navpg::", "catpg::")
 
 def _regroup_rows(rows):
     """পাশাপাশি থাকা একক-বাটনের সারিগুলোকে দুটো করে এক সারিতে বসায় (ব্যাক/পেজ বাটন আলাদা থাকে)।"""
@@ -38,6 +38,48 @@ def _regroup_rows(rows):
             out.append(row)
     flush()
     return out
+
+_NAV_PAGE = 40   # একটা মেসেজে সর্বোচ্চ এতগুলো বাটন (Telegram-এর ১০০-বাটন লিমিটের ভেতরে)
+
+def _clamp_page(page, total):
+    pages = max(1, -(-total // _NAV_PAGE))
+    return max(0, min(int(page or 0), pages - 1)), pages
+
+def _page_row(prefix, page, pages):
+    """◀️ 2/5 ▶️ — পেজ বদলানোর বাটন সারি।"""
+    row = []
+    if page > 0:
+        row.append(InlineKeyboardButton("◀️", callback_data=f"{prefix}::{page - 1}"))
+    row.append(InlineKeyboardButton(f"{page + 1}/{pages}", callback_data=f"{prefix}::{page}"))
+    if page < pages - 1:
+        row.append(InlineKeyboardButton("▶️", callback_data=f"{prefix}::{page + 1}"))
+    return row
+
+def _nav_view(uid, state, page=0):
+    """সিজন/কোয়ালিটি/এপিসোড লিস্ট — বড় হলে ৪০টা করে পেজে ভাগ করে দেখায়।
+    বাটনের কলব্যাক সবসময় পুরো লিস্টের গ্লোবাল ইনডেক্স, তাই navigate/getnav আগের মতোই কাজ করে।"""
+    node = db.get(state["title"], {})
+    for key in state.get("path", []):
+        node = node.get(key, {})
+    if not node:
+        return None, None
+    keys = ordered_keys(node)
+    leaf = is_leaf_level(node)
+    page, pages = _clamp_page(page, len(keys))
+    state["children"] = keys
+    state["page"] = page
+    label = state["title"] if not state.get("path") else f"{state['title']} - {' / '.join(state['path'])}"
+    cb = "getnav::{}" if leaf else "nav::{}"
+    buttons = [
+        [InlineKeyboardButton(keys[i], callback_data=cb.format(i))]
+        for i in range(page * _NAV_PAGE, min(len(keys), (page + 1) * _NAV_PAGE))
+    ]
+    if pages > 1:
+        buttons.append(_page_row("navpg", page, pages))
+    buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
+    text = f"{label}\n{t(uid, 'select_quality' if leaf else 'select_option')}"
+    return text, InlineKeyboardMarkup(buttons)
+
 
 def _fit(btn, limit=22):
     txt = btn.text
@@ -794,7 +836,7 @@ def ordered_keys(node):
 def natural_sort_key(text: str):
     return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", text)]
 
-BOT_VERSION = "2026-11-05-flash1"
+BOT_VERSION = "2026-11-10-pg1"
 TRANSCODE_URL = os.environ.get("TRANSCODE_URL", "").strip().rstrip("/")
 TRANSCODE_SECRET = os.environ.get("TRANSCODE_SECRET") or hashlib.sha256(("rt|" + str(BOT_TOKEN)).encode()).hexdigest()
 _FFMPEG = None
@@ -2156,18 +2198,10 @@ async def open_nested_entry(query, uid, title, path, origin="latest"):
         await query.edit_message_text(t(uid, "content_unavailable"))
         return
 
-    label = title if not path else f"{title} - {' / '.join(path)}"
-    browse_state[uid] = {"title": title, "path": path, "children": ordered_keys(node), "floor": len(path), "origin": origin}
+    browse_state[uid] = {"title": title, "path": path, "floor": len(path), "origin": origin}
+    text, markup = _nav_view(uid, browse_state[uid], 0)
+    await query.edit_message_text(text, reply_markup=markup)
 
-    if is_leaf_level(node):
-        buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(ordered_keys(node))]
-        option_key = "select_quality"
-    else:
-        buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(ordered_keys(node))]
-        option_key = "select_option"
-    buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
-
-    await query.edit_message_text(f"{label}\n{t(uid, option_key)}", reply_markup=InlineKeyboardMarkup(buttons))
 
 async def open_latest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2720,30 +2754,15 @@ async def open_title_flow(query, uid, title):
         await query.edit_message_text(t(uid, "content_unavailable"))
         return
 
+    st = {"title": title, "path": []}
     if is_leaf_level(node):
-        # সাধারণ মুভি/গান — সরাসরি কোয়ালিটি দেখাও
-        # (টাইটেল সরাসরি callback_data-তে বসানো হয় না — লম্বা/বাংলা টাইটেলে Telegram-এর ৬৪-বাইট
-        # লিমিট ছাড়িয়ে গিয়ে বাটন নিঃশব্দে ভেঙে যেতে পারে, তাই browse_state + ইনডেক্স ব্যবহার করা হচ্ছে)
-        browse_state[uid] = {"title": title, "path": [], "children": ordered_keys(node), "floor": 0, "origin": "search"}
-        buttons = [
-            [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
-            for i, q in enumerate(ordered_keys(node))
-        ]
-        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
-        await query.edit_message_text(
-            f"{title}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    else:
-        # সিরিজ — সিজন (বা পরের ধাপ) দেখাও
-        browse_state[uid] = {"title": title, "path": [], "children": ordered_keys(node)}
-        buttons = [
-            [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
-            for i, k in enumerate(ordered_keys(node))
-        ]
-        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
-        await query.edit_message_text(
-            f"{title}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
-        )
+        # সাধারণ মুভি/গান — সরাসরি কোয়ালিটি দেখাও (টাইটেল সরাসরি callback_data-তে বসানো হয় না,
+        # browse_state + ইনডেক্স ব্যবহার হয় — Telegram-এর ৬৪-বাইট লিমিটের জন্য)
+        st.update(floor=0, origin="search")
+    browse_state[uid] = st
+    text, markup = _nav_view(uid, st, 0)
+    await query.edit_message_text(text, reply_markup=markup)
+
 
 async def show_qualities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2771,7 +2790,7 @@ def pyramid_rows(flat):
             rows.append([flat[i]]); i += 1
     return rows
 
-def render_category_level(uid, path, with_tree=True):
+def render_category_level(uid, path, with_tree=True, page=0):
     node = get_category_node(path)
     if node is None:
         return None, None
@@ -2798,18 +2817,22 @@ def render_category_level(uid, path, with_tree=True):
             label = " - ".join(ti["path"])   # ফোল্ডারের ভেতরে শুধু Season 1 / Part-1 দেখাবে, পুরো নাম নয়
         flat.append(InlineKeyboardButton(label, callback_data=f"catnav::{len(children) - 1}"))
 
-    category_browse_state[uid] = {"path": path, "children": children}
+    names = [b.text for b in flat]
+    page, pages = _clamp_page(page, len(flat))
+    category_browse_state[uid] = {"path": path, "children": children, "names": names, "page": page}
 
-    buttons = pyramid_rows(flat)
+    buttons = pyramid_rows(flat[page * _NAV_PAGE:(page + 1) * _NAV_PAGE])
+    if pages > 1:
+        buttons.append(_page_row("catpg", page, pages))
     if path:
         buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="catback")])
 
-    names = [b.text for b in flat]
     if with_tree:
         text = f"{category_tree_text(path, names)}\n\n{t(uid, 'select_option')}"
     else:
         text = f"{' / '.join(path) if path else 'Categories'}\n{t(uid, 'select_option')}"
     return text, InlineKeyboardMarkup(buttons)
+
 
 def category_tree_text(path, names, limit=12):
     """গাছের মতো লেখা: Categories └─ Hollywood └─ Marvel ├─ ..."""
@@ -2979,13 +3002,13 @@ class _EditProxy:
 def tree_mode():
     return bot_settings.get("tree_mode", "auto")
 
-async def present_category(context, uid, path, query=None, chat_id=None):
+async def present_category(context, uid, path, query=None, chat_id=None, page=0):
     """ক্যাটাগরি লেভেল দেখায় — ৫টা স্টাইলের একটা (auto হলে র‍্যান্ডম)। সফল হলে True।"""
-    base_text, markup = render_category_level(uid, path, with_tree=False)
+    base_text, markup = render_category_level(uid, path, with_tree=False, page=page)
     if not base_text:
         return False
     style = pick_style()
-    names = [b.text for row in markup.inline_keyboard for b in row if str(b.callback_data).startswith("catnav::")]
+    names = category_browse_state.get(uid, {}).get("names") or []
     sel = t(uid, "select_option")
     state = category_browse_state.get(uid, {})
     kinds = [c[0] for c in state.get("children", [])]
@@ -3126,6 +3149,38 @@ async def category_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_path = state["path"][:-1]
     if not await present_category(context, uid, new_path, query=query):
         await query.edit_message_text(t(uid, "content_unavailable"))
+
+async def nav_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """সিজন/কোয়ালিটি/এপিসোড লিস্টের ◀️ ▶️ পেজ বদল।"""
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    state = browse_state.get(uid)
+    if not state:
+        return
+    page = int(query.data.split("::", 1)[1])
+    text, markup = _nav_view(uid, state, page)
+    if text is None:
+        return
+    try:
+        await query.edit_message_text(text, reply_markup=markup)
+    except Exception:
+        pass   # একই পেজে ক্লিক করলে Telegram "not modified" দেয় — নিরাপদ
+
+async def category_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ক্যাটাগরি লিস্টের ◀️ ▶️ পেজ বদল।"""
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    state = category_browse_state.get(uid)
+    if not state:
+        return
+    page = int(query.data.split("::", 1)[1])
+    try:
+        await present_category(context, uid, state["path"], query=query, page=page)
+    except Exception as e:
+        logging.warning("category page failed: %s", e)
+
 
 # ---------- ক্যাটাগরি/ফোল্ডার — অ্যাডমিন কমান্ড ----------
 async def add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3512,36 +3567,12 @@ async def navigate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chosen_key = state["children"][idx]
     state["path"] = state["path"] + [chosen_key]
 
-    node = db.get(state["title"], {})
-    for key in state["path"]:
-        node = node.get(key, {})
-
-    if not node:
+    text, markup = _nav_view(uid, state, 0)
+    if text is None:
         await query.edit_message_text(t(uid, "content_unavailable"))
         return
+    await query.edit_message_text(text, reply_markup=markup)
 
-    label = f"{state['title']} - {' / '.join(state['path'])}"
-
-    if is_leaf_level(node):
-        state["children"] = ordered_keys(node)
-        buttons = [
-            [InlineKeyboardButton(q, callback_data=f"getnav::{i}")]
-            for i, q in enumerate(ordered_keys(node))
-        ]
-        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
-        await query.edit_message_text(
-            f"{label}\n{t(uid, 'select_quality')}", reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    else:
-        state["children"] = ordered_keys(node)
-        buttons = [
-            [InlineKeyboardButton(k, callback_data=f"nav::{i}")]
-            for i, k in enumerate(ordered_keys(node))
-        ]
-        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
-        await query.edit_message_text(
-            f"{label}\n{t(uid, 'select_option')}", reply_markup=InlineKeyboardMarkup(buttons)
-        )
 
 async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -3552,28 +3583,11 @@ async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if state and len(state["path"]) > floor:
         state["path"] = state["path"][:-1]
-        node = db.get(state["title"], {})
-        for key in state["path"]:
-            node = node.get(key, {})
-
-        if not node:
+        text, markup = _nav_view(uid, state, 0)
+        if text is None:
             await query.edit_message_text(t(uid, "content_unavailable"))
             return
-
-        label = state["title"] if not state["path"] else f"{state['title']} - {' / '.join(state['path'])}"
-        state["children"] = ordered_keys(node)
-
-        if is_leaf_level(node):
-            buttons = [[InlineKeyboardButton(q, callback_data=f"getnav::{i}")] for i, q in enumerate(ordered_keys(node))]
-            option_key = "select_quality"
-        else:
-            buttons = [[InlineKeyboardButton(k, callback_data=f"nav::{i}")] for i, k in enumerate(ordered_keys(node))]
-            option_key = "select_option"
-        buttons.append([InlineKeyboardButton(t(uid, "back_button"), callback_data="navback")])
-
-        await query.edit_message_text(
-            f"{label}\n{t(uid, option_key)}", reply_markup=InlineKeyboardMarkup(buttons)
-        )
+        await query.edit_message_text(text, reply_markup=markup)
         return
 
     # ফ্লোরে পৌঁছে গেছে — যেখান থেকে শুরু হয়েছিল সেখানেই ফিরে যাও
@@ -5971,6 +5985,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(show_qualities, pattern=r"^title::"))
     application.add_handler(CallbackQueryHandler(category_navigate, pattern=r"^catnav::"))
     application.add_handler(CallbackQueryHandler(category_back, pattern=r"^catback$"))
+    application.add_handler(CallbackQueryHandler(category_page, pattern=r"^catpg::"))
+    application.add_handler(CallbackQueryHandler(nav_page, pattern=r"^navpg::"))
     application.add_handler(CallbackQueryHandler(report_broken, pattern=r"^rep::"))
     application.add_handler(CallbackQueryHandler(send_file, pattern=r"^get::"))
     application.add_handler(CallbackQueryHandler(navigate, pattern=r"^nav::"))
